@@ -990,4 +990,618 @@ jobs:
 - Implement feature flags for gradual rollouts
 - Maintain backward compatibility
 
-This comprehensive technical PRD provides your development team with all the necessary details to build the Play, Learn, and Earn game on Hedera. Each team member can focus on
+This comprehensive technical PRD provides your development team with all the necessary details to build the Play, Learn, and Earn game on Hedera. Each team member can focus on their specific areas while maintaining clear integration points.
+
+---
+
+## 8. Additional Implementation Details
+
+### Content Management System
+
+#### Quiz/Question Management
+```javascript
+// models/Question.js
+const QuestionSchema = {
+  id: String,
+  stageId: Number,
+  type: String, // 'multiple-choice', 'true-false', 'puzzle', 'scenario'
+  difficulty: Number,
+  question: String,
+  options: Array,
+  correctAnswer: String,
+  explanation: String,
+  points: Number,
+  timeLimit: Number, // in seconds
+  media: {
+    type: String, // 'image', 'video', 'audio'
+    url: String
+  },
+  hints: [{
+    cost: Number, // token cost
+    content: String
+  }],
+  metadata: {
+    category: String,
+    tags: Array,
+    createdBy: String,
+    reviewedBy: String
+  }
+};
+
+// services/content.service.js
+class ContentService {
+  async generateStageContent(stageId) {
+    const questions = await this.getQuestionsForStage(stageId);
+    
+    // Randomize question order
+    const shuffled = this.shuffleArray(questions);
+    
+    // Apply difficulty curve
+    const weighted = this.applyDifficultyCurve(shuffled, stageId);
+    
+    // Generate unique session hash for validation
+    const sessionHash = this.generateSessionHash(weighted);
+    
+    return {
+      questions: weighted,
+      sessionHash,
+      totalPoints: weighted.reduce((sum, q) => sum + q.points, 0),
+      timeLimit: this.calculateStageTimeLimit(stageId)
+    };
+  }
+  
+  async validateAnswers(sessionHash, answers) {
+    const session = await this.cache.get(`session:${sessionHash}`);
+    if (!session) throw new Error('Invalid session');
+    
+    let score = 0;
+    const results = [];
+    
+    for (const answer of answers) {
+      const question = session.questions.find(q => q.id === answer.questionId);
+      const isCorrect = this.checkAnswer(question, answer.answer);
+      
+      if (isCorrect) {
+        score += question.points;
+      }
+      
+      results.push({
+        questionId: answer.questionId,
+        correct: isCorrect,
+        points: isCorrect ? question.points : 0
+      });
+    }
+    
+    return { score, results, maxScore: session.totalPoints };
+  }
+}
+```
+
+### Tournament System
+
+#### Tournament Smart Contract
+```solidity
+// contracts/Tournament.sol
+pragma solidity ^0.8.0;
+
+contract Tournament {
+    struct TournamentInfo {
+        uint256 id;
+        string name;
+        uint256 startTime;
+        uint256 endTime;
+        uint256 entryFee;
+        uint256 prizePool;
+        uint256 maxParticipants;
+        uint256[] stageIds;
+        mapping(address => bool) hasEntered;
+        address[] participants;
+        mapping(address => uint256) scores;
+    }
+    
+    mapping(uint256 => TournamentInfo) public tournaments;
+    uint256 public nextTournamentId;
+    
+    event TournamentCreated(uint256 id, string name, uint256 prizePool);
+    event PlayerEntered(uint256 tournamentId, address player);
+    event TournamentCompleted(uint256 id, address[] winners, uint256[] prizes);
+    
+    function createTournament(
+        string memory name,
+        uint256 duration,
+        uint256 entryFee,
+        uint256[] memory stageIds
+    ) external onlyAdmin returns (uint256) {
+        uint256 tournamentId = nextTournamentId++;
+        
+        TournamentInfo storage tournament = tournaments[tournamentId];
+        tournament.id = tournamentId;
+        tournament.name = name;
+        tournament.startTime = block.timestamp;
+        tournament.endTime = block.timestamp + duration;
+        tournament.entryFee = entryFee;
+        tournament.maxParticipants = 100;
+        tournament.stageIds = stageIds;
+        
+        emit TournamentCreated(tournamentId, name, 0);
+        return tournamentId;
+    }
+    
+    function enterTournament(uint256 tournamentId) external payable {
+        TournamentInfo storage tournament = tournaments[tournamentId];
+        require(block.timestamp < tournament.endTime, "Tournament ended");
+        require(!tournament.hasEntered[msg.sender], "Already entered");
+        require(msg.value == tournament.entryFee, "Incorrect entry fee");
+        require(tournament.participants.length < tournament.maxParticipants, "Tournament full");
+        
+        tournament.hasEntered[msg.sender] = true;
+        tournament.participants.push(msg.sender);
+        tournament.prizePool += msg.value;
+        
+        emit PlayerEntered(tournamentId, msg.sender);
+    }
+    
+    function distributePrizes(uint256 tournamentId) external onlyAdmin {
+        TournamentInfo storage tournament = tournaments[tournamentId];
+        require(block.timestamp > tournament.endTime, "Tournament not ended");
+        
+        // Get top players
+        address[] memory winners = getTopPlayers(tournamentId, 10);
+        uint256[] memory prizes = calculatePrizes(tournament.prizePool);
+        
+        // Distribute prizes
+        for (uint i = 0; i < winners.length && i < prizes.length; i++) {
+            if (prizes[i] > 0) {
+                transferTokens(winners[i], prizes[i]);
+            }
+        }
+        
+        emit TournamentCompleted(tournamentId, winners, prizes);
+    }
+}
+```
+
+### Marketplace Implementation
+
+#### NFT Marketplace Contract
+```solidity
+// contracts/Marketplace.sol
+pragma solidity ^0.8.0;
+
+contract NFTMarketplace {
+    struct Listing {
+        address seller;
+        address nftContract;
+        uint256 tokenId;
+        uint256 price;
+        bool active;
+    }
+    
+    mapping(uint256 => Listing) public listings;
+    uint256 public nextListingId;
+    uint256 public marketplaceFee = 250; // 2.5%
+    
+    event ListingCreated(uint256 listingId, address seller, uint256 tokenId, uint256 price);
+    event ListingSold(uint256 listingId, address buyer, uint256 price);
+    event ListingCancelled(uint256 listingId);
+    
+    function createListing(
+        address nftContract,
+        uint256 tokenId,
+        uint256 price
+    ) external returns (uint256) {
+        require(price > 0, "Price must be greater than 0");
+        
+        // Transfer NFT to marketplace
+        IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
+        
+        uint256 listingId = nextListingId++;
+        listings[listingId] = Listing({
+            seller: msg.sender,
+            nftContract: nftContract,
+            tokenId: tokenId,
+            price: price,
+            active: true
+        });
+        
+        emit ListingCreated(listingId, msg.sender, tokenId, price);
+        return listingId;
+    }
+    
+    function purchaseListing(uint256 listingId) external payable {
+        Listing storage listing = listings[listingId];
+        require(listing.active, "Listing not active");
+        require(msg.value == listing.price, "Incorrect payment");
+        
+        listing.active = false;
+        
+        // Calculate fees
+        uint256 fee = (listing.price * marketplaceFee) / 10000;
+        uint256 sellerAmount = listing.price - fee;
+        
+        // Transfer NFT to buyer
+        IERC721(listing.nftContract).transferFrom(
+            address(this),
+            msg.sender,
+            listing.tokenId
+        );
+        
+        // Transfer payment to seller
+        payable(listing.seller).transfer(sellerAmount);
+        
+        // Transfer fee to treasury
+        payable(treasury).transfer(fee);
+        
+        emit ListingSold(listingId, msg.sender, listing.price);
+    }
+}
+```
+
+### Advanced Frontend Components
+
+#### 3D NFT Gallery
+```typescript
+// components/NFTGallery3D.tsx
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, Text, Box } from '@react-three/drei';
+import { useSpring, animated } from '@react-spring/three';
+
+const NFTDisplay = ({ nft, position }) => {
+  const [hovered, setHovered] = useState(false);
+  
+  const { scale } = useSpring({
+    scale: hovered ? 1.2 : 1,
+    config: { mass: 1, tension: 200, friction: 30 }
+  });
+  
+  return (
+    <animated.group position={position} scale={scale}>
+      <Box
+        args={[2, 2, 0.1]}
+        onPointerOver={() => setHovered(true)}
+        onPointerOut={() => setHovered(false)}
+        onClick={() => window.open(`/nft/${nft.id}`)}
+      >
+        <meshStandardMaterial attach="material">
+          <primitive attach="map" object={nft.texture} />
+        </meshStandardMaterial>
+      </Box>
+      <Text position={[0, -1.5, 0]} fontSize={0.3}>
+        {nft.name}
+      </Text>
+    </animated.group>
+  );
+};
+
+export const NFTGallery3D = ({ nfts }) => {
+  return (
+    <div className="h-screen w-full">
+      <Canvas camera={{ position: [0, 0, 10] }}>
+        <ambientLight intensity={0.5} />
+        <spotLight position={[10, 10, 10]} />
+        <OrbitControls enablePan={true} enableZoom={true} />
+        
+        {nfts.map((nft, index) => (
+          <NFTDisplay
+            key={nft.id}
+            nft={nft}
+            position={[
+              (index % 5) * 3 - 6,
+              Math.floor(index / 5) * 3 - 3,
+              0
+            ]}
+          />
+        ))}
+      </Canvas>
+    </div>
+  );
+};
+```
+
+#### Real-time Multiplayer Quiz
+```typescript
+// components/MultiplayerQuiz.tsx
+import { useEffect, useState } from 'react';
+import { io, Socket } from 'socket.io-client';
+
+export const MultiplayerQuiz = ({ roomId, userId }) => {
+  const [socket, setSocket] = useState<Socket>();
+  const [players, setPlayers] = useState([]);
+  const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [scores, setScores] = useState({});
+  
+  useEffect(() => {
+    const newSocket = io(process.env.NEXT_PUBLIC_WS_URL, {
+      query: { roomId, userId }
+    });
+    
+    newSocket.on('playerJoined', (player) => {
+      setPlayers(prev => [...prev, player]);
+    });
+    
+    newSocket.on('questionStart', (question) => {
+      setCurrentQuestion(question);
+      setTimeRemaining(question.timeLimit);
+    });
+    
+    newSocket.on('playerAnswered', ({ playerId, correct }) => {
+      // Show real-time feedback
+      showAnswerFeedback(playerId, correct);
+    });
+    
+    newSocket.on('roundComplete', (roundScores) => {
+      setScores(roundScores);
+    });
+    
+    setSocket(newSocket);
+    
+    return () => newSocket.close();
+  }, [roomId, userId]);
+  
+  const submitAnswer = (answer) => {
+    socket?.emit('submitAnswer', {
+      questionId: currentQuestion.id,
+      answer,
+      timestamp: Date.now()
+    });
+  };
+  
+  return (
+    <div className="multiplayer-quiz">
+      <PlayerList players={players} scores={scores} />
+      
+      <div className="question-container">
+        <Timer seconds={timeRemaining} />
+        <Question 
+          data={currentQuestion} 
+          onAnswer={submitAnswer}
+        />
+      </div>
+      
+      <LiveLeaderboard scores={scores} />
+    </div>
+  );
+};
+```
+
+### WebSocket Server for Real-time Features
+
+```javascript
+// websocket/server.js
+const { Server } = require('socket.io');
+const Redis = require('ioredis');
+
+class GameWebSocketServer {
+  constructor(httpServer) {
+    this.io = new Server(httpServer, {
+      cors: {
+        origin: process.env.FRONTEND_URL,
+        methods: ['GET', 'POST']
+      }
+    });
+    
+    this.redis = new Redis();
+    this.rooms = new Map();
+    
+    this.setupHandlers();
+  }
+  
+  setupHandlers() {
+    this.io.on('connection', (socket) => {
+      console.log(`Player connected: ${socket.id}`);
+      
+      socket.on('joinRoom', async ({ roomId, userId }) => {
+        socket.join(roomId);
+        
+        // Add player to room
+        const room = await this.getOrCreateRoom(roomId);
+        room.players.push({ id: userId, socketId: socket.id });
+        
+        // Notify other players
+        socket.to(roomId).emit('playerJoined', { userId });
+        
+        // Send current room state
+        socket.emit('roomState', room);
+      });
+      
+      socket.on('startGame', async ({ roomId }) => {
+        const room = this.rooms.get(roomId);
+        if (!room) return;
+        
+        // Start game loop
+        this.startGameLoop(roomId);
+      });
+      
+      socket.on('submitAnswer', async (data) => {
+        const { roomId, userId, answer } = data;
+        
+        // Validate and score answer
+        const result = await this.processAnswer(roomId, userId, answer);
+        
+        // Broadcast to all players in room
+        this.io.to(roomId).emit('playerAnswered', {
+          playerId: userId,
+          correct: result.correct,
+          score: result.score
+        });
+        
+        // Check if round complete
+        if (await this.isRoundComplete(roomId)) {
+          this.completeRound(roomId);
+        }
+      });
+      
+      socket.on('disconnect', () => {
+        console.log(`Player disconnected: ${socket.id}`);
+        this.removePlayerFromRooms(socket.id);
+      });
+    });
+  }
+  
+  async startGameLoop(roomId) {
+    const room = this.rooms.get(roomId);
+    const questions = await this.generateQuestions(room.stageId);
+    
+    for (const question of questions) {
+      // Send question to all players
+      this.io.to(roomId).emit('questionStart', question);
+      
+      // Start timer
+      await this.startQuestionTimer(roomId, question.timeLimit);
+      
+      // Calculate scores
+      const scores = await this.calculateRoundScores(roomId);
+      
+      // Send results
+      this.io.to(roomId).emit('roundComplete', scores);
+      
+      // Wait before next question
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    
+    // Game complete
+    this.completeGame(roomId);
+  }
+}
+```
+
+### Admin Dashboard
+
+```typescript
+// pages/admin/dashboard.tsx
+import { useState, useEffect } from 'react';
+import { Card, Grid, Stat } from '@/components/ui';
+
+const AdminDashboard = () => {
+  const [metrics, setMetrics] = useState({});
+  const [realtimeData, setRealtimeData] = useState({});
+  
+  useEffect(() => {
+    // Connect to admin websocket
+    const ws = new WebSocket(process.env.NEXT_PUBLIC_ADMIN_WS);
+    
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      setRealtimeData(data);
+    };
+    
+    // Fetch initial metrics
+    fetchMetrics();
+    
+    return () => ws.close();
+  }, []);
+  
+  return (
+    <div className="admin-dashboard">
+      <Grid cols={4}>
+        <Stat
+          title="Active Players"
+          value={realtimeData.activePlayers || 0}
+          change={realtimeData.playerChange}
+        />
+        <Stat
+          title="Games Today"
+          value={metrics.gamesToday || 0}
+          change={metrics.gameChange}
+        />
+        <Stat
+          title="Tokens Distributed"
+          value={metrics.tokensDistributed || 0}
+          suffix="PLE"
+        />
+        <Stat
+          title="NFTs Minted"
+          value={metrics.nftsMinted || 0}
+          change={metrics.nftChange}
+        />
+      </Grid>
+      
+      <Card title="Player Activity">
+        <RealtimeChart data={realtimeData.playerActivity} />
+      </Card>
+      
+      <Card title="Stage Completion Rates">
+        <StageMetrics stages={metrics.stageData} />
+      </Card>
+      
+      <Card title="Token Economy">
+        <TokenEconomyDashboard data={metrics.tokenEconomy} />
+      </Card>
+      
+      <Card title="Content Management">
+        <ContentManager />
+      </Card>
+    </div>
+  );
+};
+```
+
+---
+
+## 9. Disaster Recovery and Backup
+
+### Backup Strategy
+```bash
+# scripts/backup.sh
+#!/bin/bash
+
+# Database backup
+pg_dump $DATABASE_URL > backups/db_$(date +%Y%m%d_%H%M%S).sql
+
+# Upload to S3
+aws s3 cp backups/db_*.sql s3://backup-bucket/database/
+
+# Backup smart contract state
+node scripts/backup-contract-state.js
+
+# Backup user uploaded content
+rsync -av /var/uploads/ s3://backup-bucket/uploads/
+```
+
+### Recovery Plan
+1. **Database Recovery**: Restore from latest PostgreSQL backup
+2. **Blockchain State**: Use Hedera mirror nodes for transaction history
+3. **User Assets**: Verify NFT ownership via Hedera explorer
+4. **Configuration**: Store all configs in version control
+
+---
+
+## 10. Performance Optimization
+
+### Caching Strategy
+```javascript
+// cache/strategy.js
+const cacheStrategy = {
+  // Static content - 1 hour
+  staticContent: 3600,
+  
+  // User profiles - 5 minutes
+  userProfiles: 300,
+  
+  // Leaderboard - 1 minute
+  leaderboard: 60,
+  
+  // Game state - No cache (real-time)
+  gameState: 0,
+  
+  // NFT metadata - 1 day
+  nftMetadata: 86400
+};
+```
+
+### Database Optimization
+```sql
+-- Indexes for performance
+CREATE INDEX idx_stage_progress_player_stage ON stage_progress(player_id, stage_id);
+CREATE INDEX idx_leaderboard_stage_score ON leaderboard(stage_id, score DESC);
+CREATE INDEX idx_nft_inventory_player ON nft_inventory(player_id);
+
+-- Partitioning for large tables
+CREATE TABLE leaderboard_2024 PARTITION OF leaderboard
+FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+```
+
+---
+
+This comprehensive technical PRD provides your team with everything needed to build a production-ready GameFi platform on Hedera. The modular architecture ensures each team can work independently while maintaining clear integration points for seamless collaboration.
