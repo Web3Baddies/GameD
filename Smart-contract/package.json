@@ -1,0 +1,30 @@
+{
+  "name": "mindora-runner-contracts",
+  "version": "1.0.0",
+  "description": "Smart contracts for Mindora Runner GameFi platform",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.js",
+    "deploy:testnet": "hardhat run scripts/deploy.js --network testnet",
+    "deploy:mainnet": "hardhat run scripts/deploy.js --network mainnet"
+  },
+  "dependencies": {
+    "@hashgraph/sdk": "^2.7.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.19.0",
+    "chai": "^4.3.7",
+    "mocha": "^10.2.0"
+  },
+  "keywords": [
+    "hedera",
+    "smart-contracts",
+    "gamefi",
+    "solidity"
+  ],
+  "author": "Mindora Team",
+  "license": "MIT"
+}
