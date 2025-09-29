@@ -1,0 +1,14 @@
+{
+  "name": "mindora-runner-deployment",
+  "version": "1.0.0",
+  "description": "Deployment scripts for Mindora Runner game",
+  "scripts": {
+    "deploy-contract": "node deployContract.js",
+    "create-tokens": "node createTokens.js",
+    "create-hcs": "node createHCSTopic.js",
+    "deploy-all": "npm run create-tokens && npm run create-hcs"
+  },
+  "dependencies": {
+    "@hashgraph/sdk": "^2.64.5"
+  }
+}

@@ -59,34 +59,37 @@ export function WalletConnection() {
           // For demo purposes, we'll simulate a successful connection
           // In production, you'd handle the actual pairing process
           setTimeout(async () => {
-            const mockAddress = '0.0.123456';
-            setWalletAddress(mockAddress);
+            // Use your actual operator account for testing
+            const walletAddress = '0.0.6919858'; // Your actual account
+            setWalletAddress(walletAddress);
             setConnected(true);
-            
-            // Try to load existing player data
-            await loadPlayerData(mockAddress);
 
-            // For demo purposes, skip registration for now
-            // if (!player) {
-            //   setShowRegistration(true);
-            // }
-            
+            // Try to load existing player data
+            await loadPlayerData(walletAddress);
+
+            // Check if player needs to register
+            const { player } = useGameStore.getState();
+            if (!player) {
+              setShowRegistration(true);
+            }
+
             setIsConnecting(false);
           }, 2000);
         }
       } else {
-        // Fallback for development
-        const mockAddress = '0.0.123456';
-        setWalletAddress(mockAddress);
+        // Fallback for development - use your real account
+        const walletAddress = '0.0.6919858'; // Your actual account
+        setWalletAddress(walletAddress);
         setConnected(true);
-        
-        // Try to load existing player data
-        await loadPlayerData(mockAddress);
 
-        // For demo purposes, skip registration for now
-        // if (!player) {
-        //   setShowRegistration(true);
-        // }
+        // Try to load existing player data
+        await loadPlayerData(walletAddress);
+
+        // Check if player needs to register
+        const { player } = useGameStore.getState();
+        if (!player) {
+          setShowRegistration(true);
+        }
       }
     } catch (error) {
       console.error('Failed to connect wallet:', error);
@@ -119,19 +122,16 @@ export function WalletConnection() {
 
   if (isConnected) {
     return (
-      <div className="flex items-center space-x-3">
-        <div className="flex items-center space-x-2 bg-green-600 px-3 py-2 rounded-lg">
-          <Wallet className="w-4 h-4" />
-          <span className="text-sm font-mono">
-            {walletAddress?.slice(0, 8)}...{walletAddress?.slice(-4)}
-          </span>
+      <div className="flex items-center space-x-3 relative z-20">
+        <div className="nes-container is-dark pixel-font text-sm">
+          💰 {walletAddress?.slice(0, 8)}...{walletAddress?.slice(-4)}
         </div>
         <button
           onClick={disconnectWallet}
-          className="p-2 text-gray-400 hover:text-white transition-colors"
+          className="nes-btn is-error pixel-font text-xs"
           title="Disconnect Wallet"
         >
-          <LogOut className="w-4 h-4" />
+          EXIT
         </button>
       </div>
     );
@@ -142,41 +142,42 @@ export function WalletConnection() {
       <button
         onClick={connectWallet}
         disabled={isConnecting}
-        className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg transition-colors"
+        className={`nes-btn ${isConnecting ? 'is-disabled' : 'is-primary'} pixel-font relative z-20`}
       >
-        <Wallet className="w-4 h-4" />
-        <span>{isConnecting ? 'Connecting...' : 'Connect Wallet'}</span>
+        💼 {isConnecting ? 'CONNECTING...' : 'CONNECT WALLET'}
       </button>
 
       {/* Registration Modal */}
       {showRegistration && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h2 className="text-2xl font-bold mb-4">Welcome to Mindora!</h2>
-            <p className="text-gray-600 mb-4">Choose your username to start playing:</p>
+          <div className="nes-container with-title is-centered pixel-art" style={{ backgroundColor: 'white', maxWidth: '400px' }}>
+            <p className="title pixel-font text-primary">WELCOME TO MINDORA!</p>
+            <p className="text-gray-800 mb-4 pixel-font text-sm">Choose your username to start playing:</p>
 
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="Enter username"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              maxLength={20}
-            />
+            <div className="nes-field mb-4">
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Enter username"
+                className="nes-input pixel-font"
+                maxLength={20}
+              />
+            </div>
 
             <div className="flex space-x-3">
               <button
                 onClick={handleRegister}
                 disabled={!username.trim() || isRegistering}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg transition-colors"
+                className={`nes-btn ${!username.trim() || isRegistering ? 'is-disabled' : 'is-success'} pixel-font flex-1`}
               >
-                {isRegistering ? 'Registering...' : 'Register'}
+                {isRegistering ? 'REGISTERING...' : 'REGISTER'}
               </button>
               <button
                 onClick={() => setShowRegistration(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                className="nes-btn pixel-font"
               >
-                Skip
+                SKIP
               </button>
             </div>
           </div>

@@ -5,14 +5,17 @@ import { useGameStore } from '@/store/gameStore';
 import { Clock, CheckCircle, XCircle } from 'lucide-react';
 
 export function QuizModal() {
-  const { 
-    showQuiz, 
-    currentQuestion, 
-    setShowQuiz, 
-    setQuizAnswer, 
+  const {
+    showQuiz,
+    currentQuestion,
+    setShowQuiz,
+    setQuizAnswer,
     updateScore,
     completeStage,
-    currentStage
+    currentStage,
+    setGameOver,
+    score,
+    sessionCoins
   } = useGameStore();
   
   const [timeLeft, setTimeLeft] = useState(30);
@@ -64,7 +67,11 @@ export function QuizModal() {
     // Auto-close after showing result
     setTimeout(() => {
       if (correct) {
-        completeStage(currentStage, currentQuestion.points);
+        // Correct answer - trigger stage completion game over modal (user will choose to save)
+        setGameOver('completed', score + currentQuestion.points, sessionCoins);
+      } else {
+        // Wrong answer - trigger game over
+        setGameOver('question', score, sessionCoins);
       }
       setShowQuiz(false);
     }, 2000);
@@ -73,20 +80,20 @@ export function QuizModal() {
   if (!showQuiz || !currentQuestion) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4">
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-8 max-w-2xl w-full mx-4 border-4 border-black shadow-2xl">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">Knowledge Wall</h2>
-          <div className="flex items-center space-x-2">
-            <Clock className="w-5 h-5 text-blue-600" />
-            <span className="text-lg font-bold text-blue-600">{timeLeft}s</span>
+          <h2 className="text-3xl font-bold text-black">🧠 Knowledge Wall</h2>
+          <div className="flex items-center space-x-2 bg-red-100 p-2 rounded border-2 border-red-500">
+            <Clock className="w-6 h-6 text-red-600" />
+            <span className="text-xl font-bold text-red-600">{timeLeft}s</span>
           </div>
         </div>
 
         {/* Question */}
-        <div className="mb-6">
-          <h3 className="text-xl font-semibold mb-4">{currentQuestion.question}</h3>
+        <div className="mb-8">
+          <h3 className="text-2xl font-bold mb-6 text-black bg-blue-50 p-4 rounded border-2 border-blue-300">{currentQuestion.question}</h3>
           
           {/* Answer Options */}
           <div className="space-y-3">
@@ -95,17 +102,17 @@ export function QuizModal() {
                 key={index}
                 onClick={() => handleAnswerSelect(index)}
                 disabled={showResult}
-                className={`w-full p-4 text-left rounded-lg border-2 transition-all ${
+                className={`w-full p-4 text-left rounded-lg border-3 transition-all text-lg font-semibold ${
                   selectedAnswer === index
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                    ? 'border-blue-500 bg-blue-100 text-blue-900'
+                    : 'border-gray-400 hover:border-gray-600 bg-gray-50 text-black hover:bg-gray-100'
                 } ${
                   showResult
                     ? index === currentQuestion.correctAnswer
-                      ? 'border-green-500 bg-green-50'
+                      ? 'border-green-500 bg-green-100 text-green-900'
                       : selectedAnswer === index
-                      ? 'border-red-500 bg-red-50'
-                      : 'border-gray-200'
+                      ? 'border-red-500 bg-red-100 text-red-900'
+                      : 'border-gray-300 bg-gray-100 text-gray-600'
                     : ''
                 }`}
               >
@@ -123,7 +130,7 @@ export function QuizModal() {
                       <div className="w-2 h-2 bg-white rounded-full" />
                     )}
                   </div>
-                  <span className="text-lg">{option}</span>
+                  <span className="text-lg font-medium text-black">{option}</span>
                   {showResult && index === currentQuestion.correctAnswer && (
                     <CheckCircle className="w-6 h-6 text-green-500 ml-auto" />
                   )}

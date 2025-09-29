@@ -1,153 +1,388 @@
 'use client';
 
-import { useState } from 'react';
-import { useGameStore } from '@/store/gameStore';
-import { Play, Pause, RotateCcw, Trophy, Coins } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useGameStore, LeaderboardEntry } from '@/store/gameStore';
+import { Play, Pause, RotateCcw, Trophy, Coins, Medal, Users } from 'lucide-react';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useWalletClient } from 'wagmi';
+import { parseEther } from 'viem';
+import { getContractAddresses } from '@/config/contracts';
+import { hederaService } from '@/services/hederaService';
 
 export function GameUI() {
-  const { 
-    isPlaying, 
-    isPaused, 
-    score, 
-    coins, 
+  const {
+    isPlaying,
+    score,
+    sessionCoins,
+    player,
     currentStage,
-    setPlaying, 
-    setPaused 
+    setPlaying,
+    isSavingSession,
+    loadLeaderboard,
+    contractCallbacks
   } = useGameStore();
 
-  const [showInstructions, setShowInstructions] = useState(false);
+  const [showNFTs, setShowNFTs] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
+  const [isMinting, setIsMinting] = useState(false);
 
-  const handlePlayPause = () => {
-    if (isPlaying) {
-      setPaused(!isPaused);
-    } else {
-      setPlaying(true);
+  const { address } = useAccount();
+  const { data: walletClient } = useWalletClient();
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  // Set up wallet client for Hedera service
+  useEffect(() => {
+    if (walletClient && address) {
+      console.log('🔗 Setting up wallet client for Hedera service');
+      hederaService.setWalletClient(walletClient, address);
     }
-  };
+  }, [walletClient, address]);
+
 
   const handleRestart = () => {
     setPlaying(false);
-    setPaused(false);
     // Reset game state would go here
   };
 
+  const handleMintRewards = async (stage: number, badgeName: string, tokenAmount: number): Promise<void> => {
+    console.log(`🎖️ Starting mint process for ${badgeName}: ${tokenAmount} QuestCoins + NFT`);
+
+    if (!address) {
+      alert('Wallet not connected');
+      return;
+    }
+
+    try {
+      setIsMinting(true);
+      
+      // First, check if user has already claimed these rewards
+      console.log(`🔍 Checking if Stage ${stage} rewards were already claimed...`);
+      const userHederaId = await hederaService.evmAddressToAccountId(address);
+      
+      const rewardStatus = await hederaService.checkStageRewardsClaimed(userHederaId, stage);
+      
+      console.log(`🎯 Detailed reward check results:`, rewardStatus);
+      
+      if (rewardStatus.questCoinsAlreadyClaimed && rewardStatus.nftBadgeAlreadyClaimed) {
+        alert(`🎯 Already Claimed!\n\nYou have already claimed Stage ${stage} rewards:\n✅ ${tokenAmount} QuestCoin tokens\n✅ ${badgeName} NFT badge\n\nCurrent balance: ${rewardStatus.currentQuestCoinBalance} QuestCoins\nOwned NFTs: ${rewardStatus.ownedNFTs.length}`);
+        setIsMinting(false);
+        return;
+      } else if (rewardStatus.questCoinsAlreadyClaimed) {
+        const confirmed = confirm(`⚠️ Partial Claim Detected\n\nYou already have ${rewardStatus.currentQuestCoinBalance} QuestCoins but missing the ${badgeName} NFT.\n\nWould you like to claim just the missing NFT badge?`);
+        if (!confirmed) {
+          setIsMinting(false);
+          return;
+        }
+        
+        console.log(`🎖️ Claiming missing NFT badge only for Stage ${stage}...`);
+        // Continue with NFT-only minting
+      } else if (rewardStatus.nftBadgeAlreadyClaimed) {
+        const confirmed = confirm(`⚠️ Partial Claim Detected\n\nYou already have the ${badgeName} NFT but are missing QuestCoins.\n\nWould you like to claim the missing ${tokenAmount} QuestCoins?`);
+        if (!confirmed) {
+          setIsMinting(false);
+          return;
+        }
+        
+        console.log(`💰 Claiming missing QuestCoins only for Stage ${stage}...`);
+        // Continue with QuestCoin-only minting
+      } else {
+        console.log(`✅ No previous claims detected - proceeding with full reward minting...`);
+        console.log(`📊 Debug: QuestCoins=${rewardStatus.currentQuestCoinBalance}, NFTs=${rewardStatus.ownedNFTs.length}`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error checking reward status:', error);
+      // Continue with minting if check fails
+    }
+
+    try {
+      const confirmMint = confirm(`🎖️ Mint ${badgeName}?\n\n• NFT Badge: ${badgeName}\n• QuestCoin Tokens: ${tokenAmount}\n• Wallet: ${address.slice(0, 6)}...${address.slice(-4)}\n\nThis will mint actual HTS tokens to your wallet address.`);
+
+      if (!confirmMint) return;
+
+      console.log('🔄 User confirmed minting, proceeding with HTS token minting...');
+      setIsMinting(true);
+
+      // Get contract addresses
+      const contracts = getContractAddresses();
+      console.log('📜 Using contract addresses:', contracts);
+
+      // Initialize HederaService with token IDs
+      hederaService.setContractAddress(contracts.MINDORA_RUNNER);
+
+      try {
+        console.log('🔄 Minting HTS tokens through HederaService...');
+
+        // Convert EVM address to Hedera Account ID format
+        // For testnet wallets, we need to handle this conversion
+        // For demo purposes, we'll use a placeholder approach
+        const hederaAccountId = address; // This would need proper conversion in production
+
+        console.log(`💰 Minting ${tokenAmount} QuestCoins to ${hederaAccountId}...`);
+
+        // Mint QuestCoin tokens
+        const questCoinSuccess = await hederaService.mintQuestCoins(tokenAmount, hederaAccountId);
+
+        if (questCoinSuccess) {
+          console.log('✅ QuestCoins minted successfully');
+
+          // Mint NFT Badge
+          console.log(`🏆 Minting ${badgeName} NFT to ${hederaAccountId}...`);
+          const nftSuccess = await hederaService.mintNFTBadge(badgeName, hederaAccountId);
+
+            if (nftSuccess) {
+              console.log('✅ NFT badge minted successfully');
+              alert(`🎖️ HTS Tokens Minted Successfully!\n\n• ${tokenAmount} QuestCoin tokens minted\n• ${badgeName} NFT badge minted\n\n✅ Tokens minted to your associated Hedera account!\nCheck https://hashscan.io/testnet for transaction details.`);
+            } else {
+              console.warn('⚠️ NFT minting failed, but QuestCoins were minted');
+              alert(`⚠️ Partial Success\n\n• ${tokenAmount} QuestCoin tokens minted ✅\n• ${badgeName} NFT minting failed ❌\n\nPlease try minting the NFT again.`);
+            }
+        } else {
+          throw new Error('QuestCoin minting failed');
+        }
+
+      } catch (mintError) {
+        console.error('❌ HTS minting error:', mintError);
+
+        // Provide detailed error feedback based on the error type
+        if (mintError instanceof Error) {
+          if (mintError.message.includes('Mirror Node API error')) {
+            alert(`⚠️ Address Lookup Issue\n\nCouldn't connect to Hedera Mirror Node to look up your account.\n\nFor demo purposes, tokens will be minted to the treasury account.\n\nError: ${mintError.message}`);
+          } else if (mintError.message.includes('Cannot create account mapping')) {
+            alert(`❌ Account Mapping Error\n\nCouldn't map your EVM address to a Hedera Account ID.\n\nPlease ensure:\n1. You have a Hedera account associated with your wallet\n2. The Hedera services are accessible\n3. Try again in a moment\n\nError: ${mintError.message}`);
+          } else {
+            alert(`❌ Minting Error: ${mintError.message}\n\nPlease try again or check your Hedera account setup.`);
+          }
+        } else {
+          alert(`❌ Unknown Error: Please try again or check your Hedera account setup.`);
+        }
+      }
+
+    } catch (error) {
+      console.error('❌ Minting process failed:', error);
+      alert(`❌ Process Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsMinting(false);
+    }
+  };
+
+  // Load leaderboard data when showing leaderboard
+  useEffect(() => {
+    if (showLeaderboard) {
+      console.log('🔄 GameUI - Loading leaderboard for current stage:', currentStage);
+      loadLeaderboard().then((data) => {
+        console.log('🔄 GameUI - Leaderboard data received:', data);
+        setLeaderboardData(data || []);
+      }).catch((error) => {
+        console.error('❌ GameUI - Failed to load leaderboard:', error);
+        setLeaderboardData([]);
+      });
+    }
+  }, [showLeaderboard, loadLeaderboard, currentStage]);
+
   return (
     <>
-      {/* Game HUD Overlay */}
-      <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
-        {/* Top HUD */}
-        <div className="flex justify-between items-start p-6">
-          {/* Left side - Score and Coins */}
-          <div className="flex space-x-4">
-            <div className="bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-full px-6 py-3 shadow-lg flex items-center space-x-3">
-              <Trophy className="w-6 h-6 text-white" />
-              <span className="text-white font-bold text-xl">{score}</span>
-            </div>
-            <div className="bg-gradient-to-r from-green-400 to-green-600 rounded-full px-6 py-3 shadow-lg flex items-center space-x-3">
-              <Coins className="w-6 h-6 text-white" />
-              <span className="text-white font-bold text-xl">{coins}</span>
-            </div>
+      {/* Simple HUD - just essentials */}
+      <div className="absolute top-4 left-4 right-4 z-20 pointer-events-none">
+        <div className="flex justify-between items-center">
+          {/* Score */}
+          <div className="pixel-font text-white text-xl bg-black/50 px-3 py-1 rounded">
+            Score: {score}
           </div>
 
-          {/* Center - Stage Progress */}
-          <div className="flex flex-col items-center space-y-2">
-            <div className="bg-gradient-to-r from-purple-500 to-purple-700 rounded-full px-6 py-3 shadow-lg">
-              <span className="text-white font-bold text-xl">Stage {currentStage}</span>
-            </div>
-            <div className="w-64 bg-gray-300 rounded-full h-3 shadow-inner">
-              <div 
-                className="bg-gradient-to-r from-blue-500 to-purple-600 h-3 rounded-full transition-all duration-300"
-                style={{ width: `${Math.min((score / 1000) * 100, 100)}%` }}
-              ></div>
-            </div>
-            <span className="text-white text-sm font-semibold">Progress to Next Stage</span>
+          {/* Stage */}
+          <div className="pixel-font text-white text-xl bg-black/50 px-3 py-1 rounded">
+            Stage {currentStage}
           </div>
 
-          {/* Right side - Controls */}
-          <div className="flex space-x-2">
-            <button
-              onClick={handlePlayPause}
-              className="bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 text-white p-3 rounded-full shadow-lg transition-all transform hover:scale-105 pointer-events-auto"
-              title={isPlaying ? (isPaused ? 'Resume' : 'Pause') : 'Play'}
-            >
-              {isPlaying ? (isPaused ? <Play className="w-6 h-6" /> : <Pause className="w-6 h-6" />) : <Play className="w-6 h-6" />}
-            </button>
-            <button
-              onClick={handleRestart}
-              className="bg-gradient-to-r from-red-500 to-red-700 hover:from-red-600 hover:to-red-800 text-white p-3 rounded-full shadow-lg transition-all transform hover:scale-105 pointer-events-auto"
-              title="Restart"
-            >
-              <RotateCcw className="w-6 h-6" />
-            </button>
-            <button
-              onClick={() => setShowInstructions(!showInstructions)}
-              className="bg-gradient-to-r from-gray-500 to-gray-700 hover:from-gray-600 hover:to-gray-800 text-white p-3 rounded-full shadow-lg transition-all transform hover:scale-105 pointer-events-auto"
-              title="Instructions"
-            >
-              <span className="font-bold text-lg">?</span>
-            </button>
+          {/* Coins - Show saved + session */}
+          <div className="pixel-font text-white text-xl bg-black/50 px-3 py-1 rounded">
+            🪙 {(player?.inGameCoins || 0)} {sessionCoins > 0 && `+${sessionCoins}`}
           </div>
         </div>
       </div>
 
-      {/* Instructions Modal */}
-      {showInstructions && (
-        <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-50 pointer-events-auto">
-          <div className="bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl p-8 max-w-lg mx-4 shadow-2xl">
-            <h3 className="text-3xl font-bold mb-6 text-white text-center">Mindora Runner</h3>
-            <div className="space-y-4 text-white">
-              <div className="flex items-center space-x-4 bg-white/20 rounded-lg p-4">
-                <span className="text-3xl">🏃‍♂️</span>
-                <div>
-                  <span className="font-semibold">Run & Jump:</span> Press <kbd className="bg-white/30 px-3 py-1 rounded font-mono">SPACE</kbd> to jump over spikes, pits, and blocks
-                </div>
-              </div>
-              <div className="flex items-center space-x-4 bg-white/20 rounded-lg p-4">
-                <span className="text-3xl">💰</span>
-                <div>
-                  <span className="font-semibold">Collect Coins:</span> Gather golden coins to earn QuestCoin tokens
-                </div>
-              </div>
-              <div className="flex items-center space-x-4 bg-white/20 rounded-lg p-4">
-                <span className="text-3xl">🧠</span>
-                <div>
-                  <span className="font-semibold">Knowledge Walls:</span> Answer blockchain questions to break walls and progress
-                </div>
-              </div>
-              <div className="flex items-center space-x-4 bg-white/20 rounded-lg p-4">
-                <span className="text-3xl">🏆</span>
-                <div>
-                  <span className="font-semibold">Stage Rewards:</span> Complete stages to earn NFT badges and HTS tokens
-                </div>
-              </div>
-              <div className="flex items-center space-x-4 bg-white/20 rounded-lg p-4">
-                <span className="text-3xl">⚡</span>
-                <div>
-                  <span className="font-semibold">Progressive Difficulty:</span> Each stage gets faster with more obstacles and harder questions
-                </div>
-              </div>
+      {/* Bottom right - Single button */}
+      <div className="absolute bottom-4 right-4 z-20">
+        <button
+          onClick={() => setShowNFTs(true)}
+          className="nes-btn is-primary pixel-font pointer-events-auto"
+        >
+          COLLECTION
+        </button>
+      </div>
+
+      {/* Blockchain Save Loading */}
+      {isSavingSession && (
+        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50 pointer-events-auto">
+          <div className="nes-container is-dark pixel-art text-center">
+            <h2 className="pixel-font text-white mb-4">💾 Saving to Blockchain...</h2>
+            <p className="pixel-font text-gray-300 text-sm">Your coins and score are being saved permanently!</p>
+            <div className="mt-4">
+              <div className="animate-pulse pixel-font text-white">🔗 ⛓️ 🔗</div>
             </div>
-            <button
-              onClick={() => setShowInstructions(false)}
-              className="mt-8 w-full bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white py-4 px-6 rounded-xl text-lg font-bold transition-all transform hover:scale-105 shadow-lg"
-            >
-              Let&apos;s Play! 🎮
-            </button>
           </div>
         </div>
       )}
 
-      {/* Pause Overlay */}
-      {isPaused && (
-        <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-40 pointer-events-auto">
-          <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl p-8 text-center shadow-2xl">
-            <h2 className="text-4xl font-bold mb-4 text-white">Game Paused</h2>
-            <p className="text-white/80 mb-8 text-lg">Click the play button to resume your adventure!</p>
+
+      {/* Collection Modal - Simple */}
+      {showNFTs && (
+        <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-50 pointer-events-auto">
+          <div className="nes-container pixel-art max-w-sm w-full mx-4" style={{ backgroundColor: 'white' }}>
+            <div className="text-center mb-4">
+              <p className="pixel-font text-xl text-gray-800 mb-2">Collection</p>
+              <p className="pixel-font text-lg">🪙 {player?.inGameCoins || 0} Game Coins</p>
+              <p className="pixel-font text-sm text-gray-600">💎 {player?.tokensEarned || 0} QuestCoin Tokens</p>
+              {/* Debug player data */}
+              <p className="pixel-font text-xs text-blue-600">
+                DEBUG: Stage {player?.currentStage || 0} | Completed: [{player?.completedStages?.join(', ') || 'none'}]
+              </p>
+              
+            </div>
+
+            <div className="space-y-2 mb-4">
+              {/* Stage 1 Badge */}
+              {(() => {
+                // Stage 1 is unlocked if completed OR if player is in stage 2+ (must have completed stage 1)
+                const stage1Unlocked = player?.completedStages?.includes(1) || (player?.currentStage && player.currentStage >= 2);
+                const stage1Completed = player?.completedStages?.includes(1);
+                return (
+                  <div className={`p-3 border border-gray-300 rounded ${stage1Unlocked ? 'bg-green-50' : 'opacity-50'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex flex-col">
+                        <span className="font-semibold">🎯 Explorer Badge</span>
+                        <span className="text-xs text-gray-500">Stage 1 • 20 QuestCoin Tokens</span>
+                      </div>
+                      <span className={`pixel-font text-xs ${stage1Unlocked ? 'text-green-600' : 'text-gray-400'}`}>
+                        {stage1Completed ? '✓ COMPLETED' : stage1Unlocked ? '🔓 UNLOCKED' : 'LOCKED'}
+                      </span>
+                    </div>
+                    {stage1Unlocked && (
+                      <div className="text-center p-2 bg-green-100 rounded border">
+                        <p className="pixel-font text-xs text-green-700 mb-1">✅ REWARDS CLAIMED</p>
+                        <p className="text-xs text-gray-600">You have received:</p>
+                        <p className="text-xs text-gray-600">• 20+ QuestCoin tokens</p>
+                        <p className="text-xs text-gray-600">• Explorer Badge NFT</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Stage 2 Badge */}
+              {(() => {
+                // Stage 2 is unlocked if completed OR if player is in stage 3+ (must have completed stage 2)
+                const stage2Unlocked = player?.completedStages?.includes(2) || (player?.currentStage && player.currentStage >= 3);
+                const stage2Completed = player?.completedStages?.includes(2);
+                return (
+                  <div className={`p-3 border border-gray-300 rounded ${stage2Unlocked ? 'bg-green-50' : 'opacity-50'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex flex-col">
+                        <span className="font-semibold">⚔️ Adventurer Badge</span>
+                        <span className="text-xs text-gray-500">Stage 2 • 50 QuestCoin Tokens</span>
+                      </div>
+                      <span className={`pixel-font text-xs ${stage2Unlocked ? 'text-green-600' : 'text-gray-400'}`}>
+                        {stage2Completed ? '✓ COMPLETED' : stage2Unlocked ? '🔓 UNLOCKED' : 'LOCKED'}
+                      </span>
+                    </div>
+                    {stage2Unlocked && (
+                      <button
+                        onClick={() => handleMintRewards(2, 'Adventurer Badge', 50)}
+                        className="nes-btn is-success pixel-font w-full text-xs"
+                        disabled={isSavingSession || isMinting}
+                      >
+                        {isMinting ? '🔄 MINTING...' : '🎖️ MINT NFT + TOKENS'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Stage 3 Badge */}
+              <div className={`p-3 border border-gray-300 rounded ${player?.completedStages?.includes(3) ? 'bg-green-50' : 'opacity-50'}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex flex-col">
+                    <span className="font-semibold">👑 Master Badge</span>
+                    <span className="text-xs text-gray-500">Stage 3 • 100 QuestCoin Tokens</span>
+                  </div>
+                  <span className={`pixel-font text-xs ${player?.completedStages?.includes(3) ? 'text-green-600' : 'text-gray-400'}`}>
+                    {player?.completedStages?.includes(3) ? '✓ COMPLETED' : 'LOCKED'}
+                  </span>
+                </div>
+                {(player?.completedStages?.includes(3) || (player?.tokensEarned && player.tokensEarned >= 170)) && (
+                  <button
+                    onClick={() => handleMintRewards(3, 'Master Badge', 100)}
+                    className="nes-btn is-success pixel-font w-full text-xs"
+                    disabled={isSavingSession}
+                  >
+                    🎖️ MINT NFT + TOKENS
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex space-x-2">
+              <button
+                onClick={() => { setShowNFTs(false); setShowLeaderboard(true); }}
+                className="nes-btn is-success pixel-font flex-1 text-xs"
+              >
+                LEADERBOARD
+              </button>
+              <button
+                onClick={() => setShowNFTs(false)}
+                className="nes-btn pixel-font flex-1 text-xs"
+              >
+                CLOSE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Leaderboard Modal - Simple */}
+      {showLeaderboard && (
+        <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-50 pointer-events-auto">
+          <div className="nes-container pixel-art max-w-sm w-full mx-4" style={{ backgroundColor: 'white' }}>
+            <div className="text-center mb-4">
+              <p className="pixel-font text-xl text-gray-800">Leaderboard</p>
+              <p className="pixel-font text-sm text-gray-600">Stage {currentStage}</p>
+            </div>
+
+            <div className="space-y-1 mb-4">
+              {leaderboardData.length > 0 ? (
+                leaderboardData.slice(0, 10).map((entry, index) => (
+                  <div key={index} className="flex justify-between items-center p-2 border-b border-gray-200">
+                    <div className="flex flex-col">
+                      <span className="pixel-font text-sm">
+                        #{index + 1} {entry.username || `Player ${entry.player?.slice(-4)}` || 'Anonymous'}
+                      </span>
+                      <span className="pixel-font text-xs text-gray-500">
+                        {entry.player?.slice(0, 6)}...{entry.player?.slice(-4)}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <div className="pixel-font text-sm">{entry.score || 0}</div>
+                      <div className="pixel-font text-xs text-gray-500">
+                        {entry.totalCoins || entry.coinsCollected || 0} coins {entry.totalGames && entry.totalGames > 1 ? `(${entry.totalGames} games)` : ''}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4">
+                  <div className="pixel-font text-sm text-gray-500 mb-2">No games recorded yet!</div>
+                  <div className="pixel-font text-xs text-gray-400">Complete a stage to appear on the leaderboard</div>
+                </div>
+              )}
+            </div>
+
             <button
-              onClick={() => setPaused(false)}
-              className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white px-8 py-4 rounded-xl text-lg font-bold transition-all transform hover:scale-105 shadow-lg"
+              onClick={() => setShowLeaderboard(false)}
+              className="nes-btn pixel-font w-full"
             >
-              Resume Game ▶️
+              CLOSE
             </button>
           </div>
         </div>
