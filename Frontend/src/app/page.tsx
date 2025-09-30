@@ -2,32 +2,55 @@
 
 import { useState } from 'react';
 import { SimpleGameCanvas } from '@/components/SimpleGameCanvas';
-import { WalletConnection } from '@/components/WalletConnection';
+import { NewWalletConnection } from '@/components/NewWalletConnection';
 import { GameUI } from '@/components/GameUI';
 import { Leaderboard } from '@/components/Leaderboard';
 import { QuizModal } from '@/components/QuizModal';
+import { GameOverModal } from '@/components/GameOverModal';
+import { PixelBackground } from '@/components/PixelBackground';
+import { ContractManager } from '@/components/ContractManager';
 import { useGameStore } from '@/store/gameStore';
 
 export default function Home() {
-  const { isConnected } = useGameStore();
+  const { isConnected, player } = useGameStore();
   const [showLeaderboard, setShowLeaderboard] = useState(false);
 
+
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 text-white flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      <WalletConnection />
+    <div className="min-h-screen text-white flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      {/* Contract Manager - handles contract callbacks */}
+      <ContractManager />
+
+
+      {/* Pixel Art Background */}
+      <PixelBackground />
 
       <main className="relative w-full max-w-4xl mx-auto my-8">
-        {!isConnected ? (
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 text-center shadow-xl border border-white/20">
-            <h1 className="text-4xl font-bold mb-4">Welcome to Mindora Runner!</h1>
-            <p className="text-xl mb-6">Connect your Hedera wallet to start your adventure.</p>
-            <ul className="list-disc list-inside text-left mx-auto max-w-xs space-y-2 text-lg">
-              <li>🧠 Learn new things</li>
-              <li>💰 Collect QuestCoins</li>
-              <li>🖼️ Earn unique NFTs</li>
-              <li>📊 Compete on the leaderboard</li>
-            </ul>
+        {!isConnected || !player?.isRegistered ? (
+          <>
+            <NewWalletConnection />
+          <div className="nes-container with-title is-centered pixel-art relative z-10 max-w-md" style={{ backgroundColor: 'rgba(255, 255, 255, 0.95)' }}>
+            <p className="title pixel-font text-primary">MINDORA RUNNER</p>
+            <h1 className="pixel-font text-xl mb-6 text-gray-800 text-center">
+              Run • Learn • Earn
+            </h1>
+
+            <div className="text-center mb-6">
+              <div className="text-6xl mb-4">🏃‍♂️</div>
+              <p className="pixel-font text-sm text-gray-700 mb-4">
+                Jump obstacles, answer questions,<br/>
+                earn tokens & NFTs on Hedera!
+              </p>
+            </div>
+
+            <div className="text-center">
+              <p className="text-xs text-gray-600 mb-4">
+                {!isConnected ? 'Connect wallet to start' : 'Complete registration to play'}
+              </p>
+            </div>
           </div>
+          </>
         ) : (
           <div className="relative">
             <SimpleGameCanvas />
@@ -39,11 +62,11 @@ export default function Home() {
       {/* Leaderboard Modal */}
       {showLeaderboard && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-8 w-full max-w-2xl relative">
-            <h2 className="text-3xl font-bold mb-4 text-gray-800">Leaderboard</h2>
+          <div className="nes-container with-title is-centered pixel-art w-full max-w-2xl relative" style={{ backgroundColor: 'white' }}>
+            <p className="title pixel-font text-primary">LEADERBOARD</p>
             <button
               onClick={() => setShowLeaderboard(false)}
-              className="absolute top-4 right-4 text-gray-600 hover:text-gray-900 text-2xl"
+              className="nes-btn is-error absolute top-4 right-4 text-sm"
             >
               ✕
             </button>
@@ -54,6 +77,9 @@ export default function Home() {
 
       {/* Quiz Modal */}
       <QuizModal />
+
+      {/* Game Over Modal */}
+      <GameOverModal />
     </div>
   );
 }

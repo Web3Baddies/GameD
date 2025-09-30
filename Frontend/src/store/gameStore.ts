@@ -1,5 +1,23 @@
 import { create } from 'zustand';
-import { hederaService, LeaderboardEntry } from '@/services/hederaService';
+
+export interface LeaderboardEntry {
+  rank: number;
+  player: string;
+  username?: string;
+  stage: number;
+  score: number;
+  coinsCollected: number;
+  totalCoins?: number;
+  totalGames?: number;
+  stageCompleted: boolean;
+  timestamp: number;
+}
+
+export interface GameSessionResult {
+  success: boolean;
+  questTokensEarned?: number;
+  transactionHash?: string;
+}
 
 export interface Player {
   id: string;
@@ -7,9 +25,13 @@ export interface Player {
   username?: string;
   currentStage: number;
   totalScore: number;
-  tokensEarned: number;
+  inGameCoins: number;        // Persistent coins for purchases
+  tokensEarned: number;       // QuestCoin HTS tokens (questTokensEarned from contract)
   nftsEarned: number;
   completedStages: number[];
+  totalGamesPlayed: number;   // Session counter
+  isRegistered: boolean;      // From contract
+  registrationTime: number;   // From contract
 }
 
 export interface Stage {
@@ -39,11 +61,21 @@ export interface GameState {
   // Game state
   currentStage: number;
   score: number;
-  coins: number;
+  sessionCoins: number;       // Coins collected this session (temp)
   isPlaying: boolean;
   isPaused: boolean;
   gameSpeed: number;
-  gameMode: 'menu' | 'stage-select' | 'playing' | 'paused';
+  gameMode: 'menu' | 'stage-select' | 'playing' | 'paused' | 'game-over';
+
+  // Game over state
+  isGameOver: boolean;
+  gameOverReason: 'obstacle' | 'question' | 'completed' | null;
+  finalScore: number;
+  finalCoins: number;
+
+  // Transaction state
+  isSavingSession: boolean;   // Show loading during blockchain save
+  saveSuccess: boolean;       // Show success after blockchain save
 
   // UI state
   showQuiz: boolean;
@@ -55,20 +87,42 @@ export interface GameState {
   setConnected: (connected: boolean) => void;
   setWalletAddress: (address: string | null) => void;
   updateScore: (points: number) => void;
-  updateCoins: (amount: number) => void;
+  updateSessionCoins: (amount: number) => void;
   setPlaying: (playing: boolean) => void;
+  setSavingSession: (saving: boolean) => void;
   setPaused: (paused: boolean) => void;
   setGameSpeed: (speed: number) => void;
-  setGameMode: (mode: 'menu' | 'stage-select' | 'playing' | 'paused') => void;
+  setGameMode: (mode: 'menu' | 'stage-select' | 'playing' | 'paused' | 'game-over') => void;
   setCurrentStage: (stage: number) => void;
   setShowQuiz: (show: boolean) => void;
   setCurrentQuestion: (question: Question | null) => void;
   setQuizAnswer: (questionId: string, answer: number) => void;
-  completeStage: (stageId: number, finalScore: number) => Promise<boolean>;
+  setGameOver: (reason: 'obstacle' | 'question' | 'completed', finalScore: number, finalCoins: number) => void;
+  restartGame: () => void;
+  resetGame: () => void;
+
+  // Contract interaction callbacks - will be set by components using hooks
+  setContractCallbacks: (callbacks: {
+    registerPlayer: (username: string) => Promise<boolean>;
+    saveGameSession: (stage: number, finalScore: number, coinsCollected: number, questionsCorrect: number, stageCompleted: boolean) => Promise<{ success: boolean; transactionId?: string }>;
+    waitForTransactionConfirmation: (transactionId: string) => Promise<boolean>;
+    loadPlayerData: (walletAddress: string) => Promise<Player | null>;
+    loadLeaderboard: (stage: number, limit: number) => Promise<LeaderboardEntry[]>;
+  }) => void;
+  contractCallbacks: {
+    registerPlayer?: (username: string) => Promise<boolean>;
+    saveGameSession?: (stage: number, finalScore: number, coinsCollected: number, questionsCorrect: number, stageCompleted: boolean) => Promise<{ success: boolean; transactionId?: string }>;
+    waitForTransactionConfirmation?: (transactionId: string) => Promise<boolean>;
+    loadPlayerData?: (walletAddress: string) => Promise<Player | null>;
+    loadLeaderboard?: (stage: number, limit: number) => Promise<LeaderboardEntry[]>;
+  };
+
+  // High-level actions that use the callbacks
   registerPlayer: (username: string) => Promise<boolean>;
+  saveGameSession: (finalScore: number, stageCompleted: boolean) => Promise<boolean>;
   loadPlayerData: (walletAddress: string) => Promise<void>;
   loadLeaderboard: () => Promise<LeaderboardEntry[]>;
-  resetGame: () => void;
+  completeStage: (stageId: number, finalScore: number) => Promise<boolean>;
 }
 
 const _initialPlayer: Player = {
@@ -76,9 +130,13 @@ const _initialPlayer: Player = {
   walletAddress: '',
   currentStage: 1,
   totalScore: 0,
+  inGameCoins: 0,
   tokensEarned: 0,
   nftsEarned: 0,
   completedStages: [],
+  totalGamesPlayed: 0,
+  isRegistered: false,
+  registrationTime: 0,
 };
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -88,14 +146,21 @@ export const useGameStore = create<GameState>((set, get) => ({
   walletAddress: null,
   currentStage: 1,
   score: 0,
-  coins: 0,
+  sessionCoins: 0,
   isPlaying: false,
   isPaused: false,
   gameSpeed: 1,
   gameMode: 'stage-select',
+  isGameOver: false,
+  gameOverReason: null,
+  finalScore: 0,
+  finalCoins: 0,
+  isSavingSession: false,
+  saveSuccess: false,
   showQuiz: false,
   currentQuestion: null,
   quizAnswers: {},
+  contractCallbacks: {},
 
   // Actions
   setPlayer: (player) => set({ player }),
@@ -116,9 +181,13 @@ export const useGameStore = create<GameState>((set, get) => ({
     } : null
   })),
   
-  updateCoins: (amount) => set((state) => ({
-    coins: Math.max(0, state.coins + amount)
+  updateSessionCoins: (amount) => set((state) => ({
+    sessionCoins: Math.max(0, state.sessionCoins + amount)
   })),
+
+  setSavingSession: (saving) => set({ isSavingSession: saving }),
+
+  setContractCallbacks: (callbacks) => set({ contractCallbacks: callbacks }),
   
   setPlaying: (playing) => set({ isPlaying: playing }),
   
@@ -136,45 +205,40 @@ export const useGameStore = create<GameState>((set, get) => ({
       [questionId]: answer
     }
   })),
-  
-  completeStage: async (stageId, finalScore) => {
-    try {
-      const answers = Object.values(get().quizAnswers);
-      const success = await hederaService.mockCompleteStage(stageId, finalScore, answers);
-      
-      if (success) {
-        set((state) => {
-          const newPlayer = state.player ? {
-            ...state.player,
-            currentStage: Math.max(state.player.currentStage, stageId + 1),
-            completedStages: [...state.player.completedStages, stageId],
-            totalScore: state.player.totalScore + finalScore
-          } : null;
-          
-          return {
-            player: newPlayer,
-            currentStage: Math.max(state.currentStage, stageId + 1),
-            score: 0, // Reset score for next stage
-            showQuiz: false,
-            currentQuestion: null,
-            quizAnswers: {}
-          };
-        });
-      }
-      
-      return success;
-    } catch (error) {
-      console.error('Failed to complete stage:', error);
-      return false;
-    }
-  },
 
+  setGameOver: (reason, finalScore, finalCoins) => set({
+    isGameOver: true,
+    gameOverReason: reason,
+    finalScore,
+    finalCoins,
+    isPlaying: false,
+    gameMode: 'game-over',
+    saveSuccess: false,         // Reset save success state
+    isSavingSession: false      // Reset saving state
+  }),
+
+  restartGame: () => set({
+    isGameOver: false,
+    gameOverReason: null,
+    finalScore: 0,
+    finalCoins: 0,
+    score: 0,
+    sessionCoins: 0,
+    isPlaying: false,
+    gameMode: 'stage-select',
+    showQuiz: false,
+    currentQuestion: null,
+    quizAnswers: {},
+    saveSuccess: false
+  }),
+  
+  // High-level actions that use the contract callbacks
   registerPlayer: async (username) => {
     try {
-      const walletAddress = get().walletAddress;
-      if (!walletAddress) return false;
-      
-      const success = await hederaService.mockRegisterPlayer(username, walletAddress);
+      const { contractCallbacks, walletAddress } = get();
+      if (!contractCallbacks.registerPlayer || !walletAddress) return false;
+
+      const success = await contractCallbacks.registerPlayer(username);
       if (success) {
         await get().loadPlayerData(walletAddress);
       }
@@ -185,25 +249,54 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
   },
 
+  saveGameSession: async (finalScore, stageCompleted) => {
+    const state = get();
+    if (!state.player || !state.contractCallbacks.saveGameSession) return false;
+
+    try {
+      const questionsCorrect = Object.values(state.quizAnswers).filter(answer => answer === 0).length;
+
+      console.log('💳 Calling saveGameSession callback...');
+
+      // Just call the callback - transaction states will be handled by ContractManager
+      const result = await state.contractCallbacks.saveGameSession(
+        state.currentStage,
+        finalScore,
+        state.sessionCoins,
+        questionsCorrect,
+        stageCompleted
+      );
+
+      // Don't do optimistic updates here - let ContractManager handle the success state
+      // The sessionCoins should stay visible during the saving process
+
+      return result.success;
+    } catch (error) {
+      console.error('Failed to save game session:', error);
+      return false;
+    }
+  },
+
   loadPlayerData: async (walletAddress) => {
     try {
-      const playerData = await hederaService.mockGetPlayer(walletAddress);
+      const { contractCallbacks } = get();
+      if (!contractCallbacks.loadPlayerData) {
+        console.log('Contract callbacks not ready, waiting...');
+        return;
+      }
+
+      console.log('Loading player data for:', walletAddress);
+      const playerData = await contractCallbacks.loadPlayerData(walletAddress);
+      console.log('Received player data:', playerData);
+
       if (playerData) {
         set({
-          player: {
-            id: playerData.wallet,
-            walletAddress: playerData.wallet,
-            username: playerData.username,
-            currentStage: playerData.currentStage,
-            totalScore: playerData.totalScore,
-            tokensEarned: playerData.tokensEarned,
-            nftsEarned: playerData.nftsEarned,
-            completedStages: playerData.completedStages
-          },
+          player: playerData,
           currentStage: playerData.currentStage,
           score: 0,
-          coins: 0
+          sessionCoins: 0
         });
+        console.log('Player data set in store:', playerData);
       }
     } catch (error) {
       console.error('Failed to load player data:', error);
@@ -212,10 +305,34 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   loadLeaderboard: async () => {
     try {
-      return await hederaService.mockGetLeaderboard(10);
+      const { contractCallbacks, currentStage } = get();
+      if (!contractCallbacks.loadLeaderboard) return [];
+
+      return await contractCallbacks.loadLeaderboard(currentStage, 10);
     } catch (error) {
       console.error('Failed to load leaderboard:', error);
       return [];
+    }
+  },
+
+  completeStage: async (stageId, finalScore) => {
+    try {
+      const success = await get().saveGameSession(finalScore, true);
+
+      if (success) {
+        set((state) => ({
+          currentStage: Math.max(state.currentStage, stageId + 1),
+          score: 0, // Reset score for next stage
+          showQuiz: false,
+          currentQuestion: null,
+          quizAnswers: {}
+        }));
+      }
+
+      return success;
+    } catch (error) {
+      console.error('Failed to complete stage:', error);
+      return false;
     }
   },
   
@@ -225,12 +342,18 @@ export const useGameStore = create<GameState>((set, get) => ({
     walletAddress: null,
     currentStage: 1,
     score: 0,
-    coins: 0,
+    sessionCoins: 0,
     isPlaying: false,
     isPaused: false,
     gameSpeed: 1,
+    gameMode: 'stage-select',
+    isGameOver: false,
+    gameOverReason: null,
+    finalScore: 0,
+    finalCoins: 0,
     showQuiz: false,
     currentQuestion: null,
-    quizAnswers: {}
+    quizAnswers: {},
+    contractCallbacks: {}
   })
 }));
