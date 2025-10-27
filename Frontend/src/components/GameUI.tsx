@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { useGameStore, LeaderboardEntry } from '@/store/gameStore';
-import { Play, Pause, RotateCcw, Trophy, Coins, Medal, Users } from 'lucide-react';
+import { Play, Pause, RotateCcw, Trophy, Coins, Medal, Users, Volume2, VolumeX } from 'lucide-react';
+import { useGameSounds } from '@/hooks/useGameSounds';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useWalletClient } from 'wagmi';
 import { parseEther } from 'viem';
 import { getContractAddresses } from '@/config/contracts';
 import { hederaService } from '@/services/hederaService';
 
 export function GameUI() {
+  const { playSound, toggleMute, isMuted, masterVolume, setVolume } = useGameSounds();
   const {
     isPlaying,
     score,
@@ -184,32 +186,42 @@ export function GameUI() {
   return (
     <>
       {/* Simple HUD - just essentials */}
-      <div className="absolute top-4 left-4 right-4 z-20 pointer-events-none">
-        <div className="flex justify-between items-center">
+      <div className="absolute top-2 sm:top-4 left-2 sm:left-4 right-2 sm:right-4 z-20 pointer-events-none">
+        <div className="flex justify-between items-center gap-1 sm:gap-2">
           {/* Score */}
-          <div className="pixel-font text-white text-xl bg-black/50 px-3 py-1 rounded">
-            Score: {score}
+          <div className="pixel-font text-white text-xs sm:text-base md:text-xl bg-black/50 px-2 sm:px-3 py-0.5 sm:py-1 rounded">
+            <span className="hidden sm:inline">Score: </span>{score}
           </div>
 
           {/* Stage */}
-          <div className="pixel-font text-white text-xl bg-black/50 px-3 py-1 rounded">
-            Stage {currentStage}
+          <div className="pixel-font text-white text-xs sm:text-base md:text-xl bg-black/50 px-2 sm:px-3 py-0.5 sm:py-1 rounded">
+            <span className="hidden sm:inline">Stage </span>{currentStage}
           </div>
 
           {/* Coins - Show saved + session */}
-          <div className="pixel-font text-white text-xl bg-black/50 px-3 py-1 rounded">
+          <div className="pixel-font text-white text-xs sm:text-base md:text-xl bg-black/50 px-2 sm:px-3 py-0.5 sm:py-1 rounded">
             🪙 {(player?.inGameCoins || 0)} {sessionCoins > 0 && `+${sessionCoins}`}
           </div>
         </div>
       </div>
 
-      {/* Bottom right - Single button */}
-      <div className="absolute bottom-4 right-4 z-20">
+      {/* Bottom right - Buttons */}
+      <div className="absolute bottom-2 sm:bottom-4 right-2 sm:right-4 z-20 flex gap-1 sm:gap-2">
+        {/* Sound Control */}
         <button
-          onClick={() => setShowNFTs(true)}
-          className="nes-btn is-primary pixel-font pointer-events-auto"
+          onClick={() => { playSound('button'); toggleMute(); }}
+          className="nes-btn pixel-font pointer-events-auto text-xs sm:text-base p-1 sm:p-2"
+          title={isMuted ? 'Unmute' : 'Mute'}
         >
-          COLLECTION
+          {isMuted ? <VolumeX size={16} className="sm:w-5 sm:h-5" /> : <Volume2 size={16} className="sm:w-5 sm:h-5" />}
+        </button>
+        
+        <button
+          onClick={() => { playSound('button'); setShowNFTs(true); }}
+          className="nes-btn is-primary pixel-font pointer-events-auto text-xs sm:text-base"
+        >
+          <span className="hidden sm:inline">COLLECTION</span>
+          <span className="sm:hidden">NFTs</span>
         </button>
       </div>
 
@@ -325,13 +337,13 @@ export function GameUI() {
 
             <div className="flex space-x-2">
               <button
-                onClick={() => { setShowNFTs(false); setShowLeaderboard(true); }}
+                onClick={() => { playSound('button'); setShowNFTs(false); setShowLeaderboard(true); }}
                 className="nes-btn is-success pixel-font flex-1 text-xs"
               >
                 LEADERBOARD
               </button>
               <button
-                onClick={() => setShowNFTs(false)}
+                onClick={() => { playSound('button'); setShowNFTs(false); }}
                 className="nes-btn pixel-font flex-1 text-xs"
               >
                 CLOSE
@@ -379,7 +391,7 @@ export function GameUI() {
             </div>
 
             <button
-              onClick={() => setShowLeaderboard(false)}
+              onClick={() => { playSound('button'); setShowLeaderboard(false); }}
               className="nes-btn pixel-font w-full"
             >
               CLOSE
