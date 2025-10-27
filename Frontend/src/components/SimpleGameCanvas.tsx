@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '@/store/gameStore';
+import { useGameSounds } from '@/hooks/useGameSounds';
 
 export function SimpleGameCanvas() {
+  const { playSound } = useGameSounds();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
   const collisionUpdatesRef = useRef<{coins: number, score: number}>({coins: 0, score: 0});
@@ -491,6 +493,7 @@ export function SimpleGameCanvas() {
           coin.collected = true;
           updateSessionCoins(1);
           updateScore(10);
+          playSound('coin'); // 🔊 Coin collection sound
           console.log('🪙 Coin collected! New score should be:', score + 10);
         }
       });
@@ -518,6 +521,7 @@ export function SimpleGameCanvas() {
             gameStoreSessionCoins: sessionCoins,
             collision: true
           });
+          playSound('obstacle'); // 🔊 Obstacle collision sound
           setPlaying(false);
           // Use the current score from the store
           const currentStore = useGameStore.getState();
@@ -581,6 +585,7 @@ export function SimpleGameCanvas() {
 
           const questionData = questions[wall.id as keyof typeof questions] || questions[1];
 
+          playSound('quiz'); // 🔊 Knowledge wall sound
           setCurrentQuestion({
             id: wall.id.toString(),
             question: questionData.question,
@@ -604,6 +609,7 @@ export function SimpleGameCanvas() {
           gameStoreSessionCoins: sessionCoins,
           completed: true
         });
+        playSound('complete'); // 🔊 Stage completion sound
         setPlaying(false);
         // Use the current score from the store
         const currentStore = useGameStore.getState();
@@ -971,6 +977,7 @@ export function SimpleGameCanvas() {
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.code === 'Space' && gameState.isGrounded && isPlaying) {
+        playSound('jump'); // 🔊 Jump sound
         setGameState(prev => ({
           ...prev,
           playerVelocityY: -18,
@@ -981,6 +988,33 @@ export function SimpleGameCanvas() {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [gameState.isGrounded, isPlaying]);
+
+  // Touch/Click controls for mobile devices
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleTouchOrClick = (e: TouchEvent | MouseEvent) => {
+      if (gameState.isGrounded && isPlaying) {
+        e.preventDefault(); // Prevent default touch behavior
+        playSound('jump'); // 🔊 Jump sound
+        setGameState(prev => ({
+          ...prev,
+          playerVelocityY: -18,
+          isJumping: true
+        }));
+      }
+    };
+
+    // Add both touch and click events for maximum compatibility
+    canvas.addEventListener('touchstart', handleTouchOrClick);
+    canvas.addEventListener('click', handleTouchOrClick);
+    
+    return () => {
+      canvas.removeEventListener('touchstart', handleTouchOrClick);
+      canvas.removeEventListener('click', handleTouchOrClick);
+    };
   }, [gameState.isGrounded, isPlaying]);
 
   // Start game when component mounts
@@ -998,29 +1032,34 @@ export function SimpleGameCanvas() {
   }, [isPlaying]);
 
   return (
-    <div className="flex justify-center items-center min-h-[600px] relative z-10">
-      <div className="relative">
+    <div className="flex justify-center items-center min-h-[400px] md:min-h-[600px] relative z-10 w-full px-2 sm:px-4">
+      <div className="relative w-full max-w-[1200px] md:max-w-[1400px] lg:max-w-[1600px]">
         <canvas
           ref={canvasRef}
           width={800}
           height={600}
-          className="nes-container pixel-art shadow-2xl"
+          className="nes-container pixel-art shadow-2xl w-full h-auto"
           style={{
             background: 'linear-gradient(to bottom, #87CEEB, #98FB98)',
-            imageRendering: 'pixelated'
+            imageRendering: 'pixelated',
+            maxWidth: '100%',
+            height: 'auto'
           }}
         />
 
         {/* Game Overlay UI */}
         {!isPlaying && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-            <div className="nes-container with-title is-centered pixel-art" style={{ backgroundColor: 'rgba(255, 255, 255, 0.95)' }}>
-              <p className="title pixel-font text-primary">MINDORA RUNNER</p>
-              <h2 className="pixel-font text-xl mb-4 text-gray-800">Ready to Learn & Earn?</h2>
-              <p className="text-sm mb-6 text-gray-700 pixel-font">Press SPACE to jump and collect coins!</p>
+            <div className="nes-container with-title is-centered pixel-art mx-4 max-w-sm" style={{ backgroundColor: 'rgba(255, 255, 255, 0.95)' }}>
+              <p className="title pixel-font text-primary text-sm sm:text-base">MINDORA RUNNER</p>
+              <h2 className="pixel-font text-base sm:text-xl mb-3 sm:mb-4 text-gray-800">Ready to Learn & Earn?</h2>
+              <p className="text-xs sm:text-sm mb-4 sm:mb-6 text-gray-700 pixel-font">
+                <span className="hidden sm:inline">Press SPACE to jump and collect coins!</span>
+                <span className="sm:hidden">Tap screen to jump and collect coins!</span>
+              </p>
               <button
-                onClick={() => setPlaying(true)}
-                className="nes-btn is-primary pixel-font"
+                onClick={() => { playSound('start'); setPlaying(true); }}
+                className="nes-btn is-primary pixel-font text-xs sm:text-base"
               >
                 ▶ START GAME
               </button>

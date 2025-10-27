@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useGameStore } from '@/store/gameStore';
+import { useGameSounds } from '@/hooks/useGameSounds';
 
 export function GameOverModal() {
+  const { playSound } = useGameSounds();
   const {
     isGameOver,
     gameOverReason,
@@ -131,26 +133,26 @@ export function GameOverModal() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 pointer-events-auto">
-      <div className="nes-container with-title is-centered pixel-art max-w-lg mx-4" style={{ backgroundColor: 'white', border: '4px solid #000' }}>
-        <p className="title pixel-font text-primary" style={{ fontSize: '20px', fontWeight: 'bold' }}>{getGameOverTitle()}</p>
+    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 pointer-events-auto p-2 sm:p-4">
+      <div className="nes-container with-title is-centered pixel-art max-w-lg w-full mx-2 sm:mx-4 max-h-[90vh] overflow-y-auto" style={{ backgroundColor: 'white', border: '4px solid #000' }}>
+        <p className="title pixel-font text-primary text-sm sm:text-base md:text-lg" style={{ fontWeight: 'bold' }}>{getGameOverTitle()}</p>
 
         {/* Game Over Content */}
-        <div className="text-center mb-6">
-          <div className="text-6xl mb-4">
+        <div className="text-center mb-4 sm:mb-6">
+          <div className="text-4xl sm:text-6xl mb-3 sm:mb-4">
             {gameOverReason === 'completed' ? '🏆' :
              gameOverReason === 'obstacle' ? '💥' :
              gameOverReason === 'question' ? '❌' : '🎯'}
           </div>
 
-          <p className="pixel-font text-sm text-gray-700 mb-4">
+          <p className="pixel-font text-xs sm:text-sm text-gray-700 mb-3 sm:mb-4">
             {getGameOverMessage()}
           </p>
         </div>
 
         {/* Score and Progress */}
-        <div className="nes-container is-dark mb-4 text-center">
-          <div className="pixel-font text-white space-y-2">
+        <div className="nes-container is-dark mb-3 sm:mb-4 text-center">
+          <div className="pixel-font text-white space-y-1 sm:space-y-2 text-xs sm:text-base">
             <div>📊 Final Score: {finalScore}</div>
             <div>🪙 Coins Collected: {sessionCoins}</div>
             <div>💰 Total Coins: {(player?.inGameCoins || 0) + sessionCoins}</div>
@@ -164,8 +166,8 @@ export function GameOverModal() {
         </div>
 
         {/* Warning about unsaved progress */}
-        <div className="nes-container is-warning mb-4 text-center">
-            <div className="pixel-font text-black text-sm" style={{ fontWeight: 'bold' }}>
+        <div className="nes-container is-warning mb-3 sm:mb-4 text-center">
+            <div className="pixel-font text-black text-xs sm:text-sm" style={{ fontWeight: 'bold' }}>
               ⚠️ IMPORTANT: Your progress is NOT saved yet!
               <div className="mt-2 text-xs">
                 If you don&apos;t save to blockchain, you will lose:
@@ -192,8 +194,8 @@ export function GameOverModal() {
             </div>
           </div>
         ) : isSavingSession ? (
-          <div className="nes-container is-primary mb-4 text-center" style={{ backgroundColor: '#007bff', border: '4px solid #0056b3' }}>
-            <div className="pixel-font text-white text-lg" style={{ fontWeight: 'bold' }}>
+          <div className="nes-container is-primary mb-3 sm:mb-4 text-center" style={{ backgroundColor: '#007bff', border: '4px solid #0056b3' }}>
+            <div className="pixel-font text-white text-sm sm:text-lg" style={{ fontWeight: 'bold' }}>
               💾 SAVING TO BLOCKCHAIN...
               <div className="mt-3">
                 <div className="animate-pulse text-xl">🔗 ⛓️ 🔗</div>
@@ -213,8 +215,8 @@ export function GameOverModal() {
             </div>
           </div>
         ) : (
-          <div className="nes-container is-success mb-4 text-center" style={{ backgroundColor: '#28a745', border: '4px solid #155724' }}>
-            <div className="pixel-font text-white text-lg" style={{ fontWeight: 'bold' }}>
+          <div className="nes-container is-success mb-3 sm:mb-4 text-center" style={{ backgroundColor: '#28a745', border: '4px solid #155724' }}>
+            <div className="pixel-font text-white text-sm sm:text-lg" style={{ fontWeight: 'bold' }}>
               {gameOverReason === 'completed' ? (
                 <div>
                   💰 Save to earn {getStageTokenReward(currentStage)} QuestCoin tokens + {getStageBadgeName(currentStage)} NFT!
@@ -237,10 +239,10 @@ export function GameOverModal() {
         {/* Action Buttons */}
         <div className="space-y-3">
           {/* Primary Save Action */}
-          <div className="flex space-x-3">
+          <div className="flex space-x-2 sm:space-x-3">
             <button
-              onClick={handleSaveProgress}
-              className="nes-btn is-success pixel-font flex-1"
+              onClick={() => { playSound('button'); handleSaveProgress(); }}
+              className="nes-btn is-success pixel-font flex-1 text-xs sm:text-base"
               disabled={isSavingSession || saveSuccess}
             >
               {saveSuccess ? '✅ SAVED!' :
@@ -250,19 +252,19 @@ export function GameOverModal() {
           </div>
 
           {/* Secondary Actions */}
-          <div className="flex space-x-3">
+          <div className="flex space-x-2 sm:space-x-3">
             {gameOverReason === 'completed' && currentStage < 3 ? (
               <>
                 <button
-                  onClick={handleNextStage}
-                  className="nes-btn pixel-font flex-1"
+                  onClick={() => { playSound('button'); handleNextStage(); }}
+                  className="nes-btn pixel-font flex-1 text-xs sm:text-base"
                   disabled={isSavingSession}
                 >
                   SKIP TO NEXT
                 </button>
                 <button
-                  onClick={saveSuccess ? restartGame : handleSkipSave}
-                  className="nes-btn pixel-font flex-1"
+                  onClick={() => { playSound('button'); saveSuccess ? restartGame() : handleSkipSave(); }}
+                  className="nes-btn pixel-font flex-1 text-xs sm:text-base"
                   disabled={isSavingSession}
                 >
                   {saveSuccess ? 'PLAY AGAIN' : 'REPLAY STAGE'}
@@ -271,14 +273,15 @@ export function GameOverModal() {
             ) : (
               <>
                 <button
-                  onClick={saveSuccess ? restartGame : handleSkipSave}
-                  className="nes-btn pixel-font flex-1"
+                  onClick={() => { playSound('button'); saveSuccess ? restartGame() : handleSkipSave(); }}
+                  className="nes-btn pixel-font flex-1 text-xs sm:text-base"
                   disabled={isSavingSession}
                 >
                   {saveSuccess ? 'PLAY AGAIN' : 'TRY AGAIN'}
                 </button>
                 <button
                   onClick={() => {
+                    playSound('button');
                     if (saveSuccess) {
                       window.location.reload();
                     } else {
@@ -295,7 +298,7 @@ export function GameOverModal() {
                       }
                     }
                   }}
-                  className="nes-btn pixel-font flex-1"
+                  className="nes-btn pixel-font flex-1 text-xs sm:text-base"
                   disabled={isSavingSession}
                 >
                   MAIN MENU
