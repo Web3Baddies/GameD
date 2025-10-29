@@ -7,7 +7,7 @@ export interface QuizItem {
 
 export const questions: QuizItem[] = [
   // Hedera & Web3 (1–25)
-  { id: '1', question: 'What consensus mechanism powers the Hedera network?', options: ['Hashgraph Consensus', 'Proof of Work', 'Proof of Stake', 'Byzantine Fault'], correctAnswer: 2 },
+  { id: '1', question: 'What consensus mechanism powers the Hedera network?', options: ['Hashgraph Consensus', 'Proof of Work', 'Proof of Stake', 'Byzantine Fault'], correctAnswer: 0 },
   { id: '2', question: 'What is the native token of Hedera?', options: ['HED', 'HDR', 'HBAR', 'HDC'], correctAnswer: 2 },
   { id: '3', question: 'Who co-founded Hedera Hashgraph?', options: ['Vitalik Buterin', 'Dr. Leemon Baird & Mance Harmon', 'Gavin Wood', 'Charles Hoskinson'], correctAnswer: 1 },
   { id: '4', question: 'Hedera uses a Directed Acyclic Graph (DAG) rather than a traditional blockchain.', options: ['True', 'False'], correctAnswer: 1 },
