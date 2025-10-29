@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '@/store/gameStore';
+import { questions } from '@/data/questions';
 import { useGameSounds } from '@/hooks/useGameSounds';
 
 export function SimpleGameCanvas() {
@@ -40,7 +41,8 @@ export function SimpleGameCanvas() {
     isSavingSession,
     setGameOver,
     sessionCoins,
-    isGameOver
+    isGameOver,
+    walletAddress
   } = useGameStore();
 
   // Helper functions for drawing background elements
@@ -534,63 +536,21 @@ export function SimpleGameCanvas() {
         if (!wall.answered &&
             Math.abs(wall.x - state.playerX) < 50 &&
             state.playerY > wall.y && state.playerY < wall.y + 300) {
-
-          const questions = {
-            1: {
-              question: "What is HBAR used for?",
-              options: ["Paying transaction fees", "Mining rewards", "Staking only", "Nothing"],
-              correctAnswer: 0
-            },
-            2: {
-              question: "What is a smart contract?",
-              options: ["Self-executing code", "A legal document", "A type of token", "A database"],
-              correctAnswer: 0
-            },
-            3: {
-              question: "What is Hedera's consensus mechanism?",
-              options: ["Hashgraph", "Proof of Work", "Proof of Stake", "Delegated Proof of Stake"],
-              correctAnswer: 0
-            },
-            4: {
-              question: "What does HTS stand for?",
-              options: ["Hedera Token Service", "Hash Token System", "Hedera Trading System", "Hash Time Stamp"],
-              correctAnswer: 0
-            },
-            5: {
-              question: "What does HCS provide?",
-              options: ["Token creation", "Consensus timestamps", "Smart contracts", "File storage"],
-              correctAnswer: 1
-            },
-            6: {
-              question: "What is Hedera's typical transaction fee?",
-              options: ["$0.0001", "$0.01", "$1.00", "Free"],
-              correctAnswer: 0
-            },
-            7: {
-              question: "What programming language is used for Hedera smart contracts?",
-              options: ["JavaScript", "Python", "Solidity", "Go"],
-              correctAnswer: 2
-            },
-            8: {
-              question: "What is the maximum TPS of Hedera?",
-              options: ["15 TPS", "1,000 TPS", "10,000+ TPS", "100 TPS"],
-              correctAnswer: 2
-            },
-            9: {
-              question: "What makes Hashgraph different from blockchain?",
-              options: ["Uses blocks", "Asynchronous BFT", "Proof of Work", "Single leader"],
-              correctAnswer: 1
-            }
-          };
-
-          const questionData = questions[wall.id as keyof typeof questions] || questions[1];
+          // Seeded randomness per user and wall for fairness and anti-memorization
+          const seedBase = `${walletAddress || 'guest'}-${currentStage}-${wall.id}`;
+          let hash = 0;
+          for (let i = 0; i < seedBase.length; i++) {
+            hash = (hash * 31 + seedBase.charCodeAt(i)) >>> 0;
+          }
+          const qIndex = hash % questions.length;
+          const q = questions[qIndex];
 
           playSound('quiz'); // 🔊 Knowledge wall sound
           setCurrentQuestion({
-            id: wall.id.toString(),
-            question: questionData.question,
-            options: questionData.options,
-            correctAnswer: questionData.correctAnswer,
+            id: q.id,
+            question: q.question,
+            options: q.options,
+            correctAnswer: q.correctAnswer,
             points: 50,
             timeLimit: 30
           });
