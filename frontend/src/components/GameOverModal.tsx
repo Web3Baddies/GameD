@@ -17,7 +17,8 @@ export function GameOverModal() {
     isSavingSession,
     saveSuccess,
     setCurrentStage,
-    saveGameSession
+    saveGameSession,
+    showNotification
   } = useGameStore();
   
   const { playSound } = useGameSounds();
@@ -89,7 +90,7 @@ export function GameOverModal() {
 
     // Check if wallet is connected
     if (!player || !player.walletAddress) {
-      alert('Please connect your wallet first to save progress to blockchain!');
+      showNotification('warning', 'Wallet Not Connected', 'Please connect your wallet first to save progress to blockchain!');
       return;
     }
 

@@ -26,14 +26,19 @@ export const getContractAddresses = () => {
 export const hederaToEvmAddress = (hederaAddress: string): `0x${string}` => {
   // For now, we'll use the deployed EVM address directly
   // In production, you might want to convert Hedera IDs to EVM addresses
-  if (hederaAddress === '0.0.6920065') {
-    // Your deployed contract's EVM address
-    return '0x0f764437ffBE1fcd0d0d276a164610422710B482';
-  }
+  // if (hederaAddress === '0.0.6920065') {
+  //   // Your deployed contract's EVM address
+  //   return '0x0f764437ffBE1fcd0d0d276a164610422710B482';
+  // }
 
   // New deployed contract mapping
   if (hederaAddress === '0.0.7158178') {
     return '0x25596abea049173e53e04c3a7f472bd3f54042e5';
+  }
+
+  // Latest deployed contract (Stage unlock fix)
+  if (hederaAddress === '0.0.7172114') {
+    return '0xa2054053ded91cf7ecd51ea39756857a2f0a5284';
   }
 
   // NFT Marketplace contract
@@ -52,9 +57,19 @@ export const hederaToEvmAddress = (hederaAddress: string): `0x${string}` => {
 // Get contract addresses with EVM format conversion
 export const getEvmContractAddresses = () => {
   const addresses = getContractAddresses();
+  
+  const evmAddress = hederaToEvmAddress(addresses.MINDORA_RUNNER);
+  
+  // Log contract address for debugging
+  console.log('📋 Contract Address Configuration:', {
+    network: process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet',
+    rawAddress: addresses.MINDORA_RUNNER,
+    evmAddress: evmAddress,
+    envVar: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || 'not set'
+  });
 
   return {
-    MINDORA_RUNNER: hederaToEvmAddress(addresses.MINDORA_RUNNER),
+    MINDORA_RUNNER: evmAddress,
     QUESTCOIN_TOKEN: addresses.QUESTCOIN_TOKEN,
     // Badge NFT Token: 0.0.7158217 → EVM address: 0x00000000000000000000000000000000006d39c9
     BADGE_NFT_TOKEN: '0x00000000000000000000000000000000006d39c9' as `0x${string}`,

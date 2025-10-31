@@ -2,7 +2,15 @@ import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 
 import { getEvmContractAddresses, MindoraRunnerABI } from '@/config/contracts';
 import { useState } from 'react';
 
+// Get contract addresses - this will be called every time the hook is used
+// This ensures we always use the latest contract address
 const contracts = getEvmContractAddresses();
+
+// Log contract address on import for debugging
+console.log('🔍 useMindoraRunner - Contract Address:', {
+  MINDORA_RUNNER: contracts.MINDORA_RUNNER,
+  envVar: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || 'not set'
+});
 
 // Types based on our contract
 export interface Player {
@@ -67,7 +75,8 @@ export const useMindoraRunner = () => {
 
       console.log('💾 Validated parameters:', { validStage, validScore, validCoins, validQuestions, stageCompleted });
 
-      const result = writeContract({
+      // Use writeContractAsync to properly await the transaction submission
+      const txHash = await writeContractAsync({
         address: contracts.MINDORA_RUNNER,
         abi: MindoraRunnerABI,
         functionName: 'saveGameSession',
@@ -79,8 +88,9 @@ export const useMindoraRunner = () => {
           stageCompleted
         ],
       });
-      console.log('✅ Game session save transaction submitted');
-      return result;
+      console.log('✅ Game session save transaction submitted, hash:', txHash);
+      console.log('⏳ Transaction is being mined... Please wait for confirmation.');
+      return txHash;
     } catch (error) {
       console.error('❌ Failed to save game session:', error);
       throw error;

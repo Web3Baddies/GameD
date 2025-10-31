@@ -9,12 +9,13 @@ import { QuizModal } from '@/components/QuizModal';
 import { GameOverModal } from '@/components/GameOverModal';
 import { PixelBackground } from '@/components/PixelBackground';
 import { ContractManager } from '@/components/ContractManager';
+import { GameNotification } from '@/components/GameNotification';
 import { useGameStore } from '@/store/gameStore';
 import { useGameSounds } from '@/hooks/useGameSounds';
 import { Volume2, VolumeX } from 'lucide-react';
 
 export default function Home() {
-  const { isConnected, player } = useGameStore();
+  const { isConnected, player, notification, hideNotification } = useGameStore();
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const { startBackgroundMusic, stopBackgroundMusic, toggleAllAudio, isAudioEnabled } = useGameSounds();
 
@@ -104,6 +105,12 @@ export default function Home() {
 
       {/* Game Over Modal */}
       <GameOverModal />
+
+      {/* Game Notifications */}
+      <GameNotification 
+        notification={notification} 
+        onClose={hideNotification} 
+      />
     </div>
   );
 }
