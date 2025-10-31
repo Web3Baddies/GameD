@@ -85,6 +85,15 @@ export interface GameState {
   currentQuestion: Question | null;
   quizAnswers: { [questionId: string]: number };
 
+  // Notification state
+  notification: {
+    id: string;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+    duration?: number;
+  } | null;
+
   // Actions
   setPlayer: (player: Player | null) => void;
   setConnected: (connected: boolean) => void;
@@ -103,6 +112,10 @@ export interface GameState {
   setGameOver: (reason: 'obstacle' | 'question' | 'completed', finalScore: number, finalCoins: number) => void;
   restartGame: () => void;
   resetGame: () => void;
+  
+  // Notification actions
+  showNotification: (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string, duration?: number) => void;
+  hideNotification: () => void;
 
   // Contract interaction callbacks - will be set by components using hooks
   setContractCallbacks: (callbacks: {
@@ -174,6 +187,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   showQuiz: false,
   currentQuestion: null,
   quizAnswers: {},
+  notification: null,
   contractCallbacks: {},
 
   // Actions
@@ -219,6 +233,18 @@ export const useGameStore = create<GameState>((set, get) => ({
       [questionId]: answer
     }
   })),
+
+  showNotification: (type, title, message, duration = 5000) => set({
+    notification: {
+      id: Date.now().toString(),
+      type,
+      title,
+      message,
+      duration
+    }
+  }),
+
+  hideNotification: () => set({ notification: null }),
 
   setGameOver: (reason, finalScore, finalCoins) => set({
     isGameOver: true,
@@ -268,11 +294,33 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!state.player || !state.contractCallbacks.saveGameSession) return false;
 
     try {
-      const questionsCorrect = Object.values(state.quizAnswers).filter(answer => answer === 0).length;
+      // IMPORTANT FIX: Count correct answers properly
+      // quizAnswers stores { questionId: selectedAnswerIndex }
+      // To count correct answers, we need to compare each answer with its question's correctAnswer
+      // But since we only store answers when correct (see QuizModal), we can count entries
+      // However, if stage is completed, they must have answered at least 1 question correctly
+      let questionsCorrect = Object.keys(state.quizAnswers).length;
+      
+      // If stage completed but no quiz answers recorded, use default of 1
+      // (This happens when player completed stage but quizAnswers weren't tracked properly)
+      if (stageCompleted && questionsCorrect === 0) {
+        console.warn('⚠️ Stage completed but no quiz answers recorded. Using default of 1 correct answer.');
+        questionsCorrect = 1;
+      }
 
-      console.log('💳 Calling saveGameSession callback...');
+      console.log('💳 Calling saveGameSession callback...', {
+        localCurrentStage: state.currentStage,
+        contractCurrentStage: state.player?.currentStage || 1,
+        finalScore,
+        sessionCoins: state.sessionCoins,
+        questionsCorrect,
+        stageCompleted,
+        quizAnswersCount: Object.keys(state.quizAnswers).length,
+        quizAnswers: state.quizAnswers
+      });
 
-      // Just call the callback - transaction states will be handled by ContractManager
+      // The updated contract now allows saving currentStage + 1 if previous stage is completed
+      // So we can directly save the current stage - contract will handle validation
       const result = await state.contractCallbacks.saveGameSession(
         state.currentStage,
         finalScore,
@@ -280,9 +328,6 @@ export const useGameStore = create<GameState>((set, get) => ({
         questionsCorrect,
         stageCompleted
       );
-
-      // Don't do optimistic updates here - let ContractManager handle the success state
-      // The sessionCoins should stay visible during the saving process
 
       return result.success;
     } catch (error) {

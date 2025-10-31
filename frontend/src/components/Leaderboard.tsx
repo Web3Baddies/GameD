@@ -28,6 +28,7 @@ interface Tournament {
 }
 
 export function Leaderboard() {
+  const showNotification = useGameStore(state => state.showNotification);
   const { player, walletAddress } = useGameStore();
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
@@ -198,7 +199,7 @@ export function Leaderboard() {
               </div>
               <button
                 className="w-full mt-3 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white font-bold py-2 px-4 rounded transition-colors"
-                onClick={() => alert('Tournament feature coming soon!')}
+                onClick={() => showNotification('info', 'Coming Soon', 'Tournament feature coming soon!')}
               >
                 {tournament.status === 'upcoming' ? 'Register' : 'View Details'}
               </button>

@@ -9,6 +9,7 @@ import { parseEther } from 'viem';
 import { getContractAddresses } from '@/config/contracts';
 import { hederaService } from '@/services/hederaService';
 import { useGameSounds } from '@/hooks/useGameSounds';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 export function GameUI() {
   const router = useRouter();
@@ -24,6 +25,7 @@ export function GameUI() {
   const isSavingSession = useGameStore(state => state.isSavingSession);
   const loadLeaderboard = useGameStore(state => state.loadLeaderboard);
   const contractCallbacks = useGameStore(state => state.contractCallbacks);
+  const showNotification = useGameStore(state => state.showNotification);
 
   const [showNFTs, setShowNFTs] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -31,6 +33,21 @@ export function GameUI() {
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
   const [isMinting, setIsMinting] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    onCancel: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    onCancel: () => {}
+  });
 
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
@@ -55,7 +72,7 @@ export function GameUI() {
     console.log(`🎖️ Starting mint process for ${badgeName}: ${tokenAmount} QuestCoins + NFT`);
 
     if (!address) {
-      alert('Wallet not connected');
+      showNotification('warning', 'Wallet Not Connected', 'Please connect your wallet to claim rewards.');
       return;
     }
 
@@ -71,27 +88,45 @@ export function GameUI() {
       console.log(`🎯 Detailed reward check results:`, rewardStatus);
       
       if (rewardStatus.questCoinsAlreadyClaimed && rewardStatus.nftBadgeAlreadyClaimed) {
-        alert(`🎯 Already Claimed!\n\nYou have already claimed Stage ${stage} rewards:\n✅ ${tokenAmount} QuestCoin tokens\n✅ ${badgeName} NFT badge\n\nCurrent balance: ${rewardStatus.currentQuestCoinBalance} QuestCoins\nOwned NFTs: ${rewardStatus.ownedNFTs.length}`);
+        showNotification('info', 'Already Claimed', `You have already claimed Stage ${stage} rewards:\n✅ ${tokenAmount} QuestCoin tokens\n✅ ${badgeName} NFT badge\n\nCurrent balance: ${rewardStatus.currentQuestCoinBalance} QuestCoins\nOwned NFTs: ${rewardStatus.ownedNFTs.length}`);
         setIsMinting(false);
         return;
       } else if (rewardStatus.questCoinsAlreadyClaimed) {
-        const confirmed = confirm(`⚠️ Partial Claim Detected\n\nYou already have ${rewardStatus.currentQuestCoinBalance} QuestCoins but missing the ${badgeName} NFT.\n\nWould you like to claim just the missing NFT badge?`);
-        if (!confirmed) {
-          setIsMinting(false);
-          return;
-        }
-        
-        console.log(`🎖️ Claiming missing NFT badge only for Stage ${stage}...`);
-        // Continue with NFT-only minting
+        const mintParams = { stage, badgeName, tokenAmount };
+        setConfirmDialog({
+          isOpen: true,
+          title: 'Partial Claim Detected',
+          message: `You already have ${rewardStatus.currentQuestCoinBalance} QuestCoins but missing the ${badgeName} NFT.\n\nWould you like to claim just the missing NFT badge?`,
+          onConfirm: () => {
+            setConfirmDialog({ ...confirmDialog, isOpen: false });
+            console.log(`🎖️ Claiming missing NFT badge only for Stage ${stage}...`);
+            // Continue with NFT-only minting - proceed with minting (NFT only)
+            proceedWithMinting(mintParams.stage, mintParams.badgeName, mintParams.tokenAmount);
+          },
+          onCancel: () => {
+            setConfirmDialog({ ...confirmDialog, isOpen: false });
+            setIsMinting(false);
+          }
+        });
+        return;
       } else if (rewardStatus.nftBadgeAlreadyClaimed) {
-        const confirmed = confirm(`⚠️ Partial Claim Detected\n\nYou already have the ${badgeName} NFT but are missing QuestCoins.\n\nWould you like to claim the missing ${tokenAmount} QuestCoins?`);
-        if (!confirmed) {
-          setIsMinting(false);
-          return;
-        }
-        
-        console.log(`💰 Claiming missing QuestCoins only for Stage ${stage}...`);
-        // Continue with QuestCoin-only minting
+        const mintParams = { stage, badgeName, tokenAmount };
+        setConfirmDialog({
+          isOpen: true,
+          title: 'Partial Claim Detected',
+          message: `You already have the ${badgeName} NFT but are missing QuestCoins.\n\nWould you like to claim the missing ${tokenAmount} QuestCoins?`,
+          onConfirm: () => {
+            setConfirmDialog({ ...confirmDialog, isOpen: false });
+            console.log(`💰 Claiming missing QuestCoins only for Stage ${stage}...`);
+            // Continue with QuestCoin-only minting
+            proceedWithMinting(mintParams.stage, mintParams.badgeName, mintParams.tokenAmount);
+          },
+          onCancel: () => {
+            setConfirmDialog({ ...confirmDialog, isOpen: false });
+            setIsMinting(false);
+          }
+        });
+        return;
       } else {
         console.log(`✅ No previous claims detected - proceeding with full reward minting...`);
         console.log(`📊 Debug: QuestCoins=${rewardStatus.currentQuestCoinBalance}, NFTs=${rewardStatus.ownedNFTs.length}`);
@@ -102,11 +137,27 @@ export function GameUI() {
       // Continue with minting if check fails
     }
 
+    // Show confirmation dialog before minting - store params for later
+    const mintParams = { stage, badgeName, tokenAmount };
+    setConfirmDialog({
+      isOpen: true,
+      title: `Mint ${badgeName}?`,
+      message: `• NFT Badge: ${badgeName}\n• QuestCoin Tokens: ${tokenAmount}\n• Wallet: ${address.slice(0, 6)}...${address.slice(-4)}\n\nThis will mint actual HTS tokens to your wallet address.`,
+      onConfirm: () => {
+        setConfirmDialog({ ...confirmDialog, isOpen: false });
+        proceedWithMinting(mintParams.stage, mintParams.badgeName, mintParams.tokenAmount);
+      },
+      onCancel: () => {
+        setConfirmDialog({ ...confirmDialog, isOpen: false });
+        setIsMinting(false);
+      }
+    });
+  };
+
+  const proceedWithMinting = async (stage: number, badgeName: string, tokenAmount: number) => {
+    if (!address) return;
+    
     try {
-      const confirmMint = confirm(`🎖️ Mint ${badgeName}?\n\n• NFT Badge: ${badgeName}\n• QuestCoin Tokens: ${tokenAmount}\n• Wallet: ${address.slice(0, 6)}...${address.slice(-4)}\n\nThis will mint actual HTS tokens to your wallet address.`);
-
-      if (!confirmMint) return;
-
       console.log('🔄 User confirmed minting, proceeding with HTS token minting...');
       setIsMinting(true);
 
@@ -154,7 +205,7 @@ export function GameUI() {
               }
             } catch (claimError) {
               console.error('⚠️ Failed to mark tokens as claimed:', claimError);
-              alert(`⚠️ Warning: Tokens minted but failed to mark as claimed in contract. You may need to refresh.`);
+              showNotification('warning', 'Warning', 'Tokens minted but failed to mark as claimed in contract. You may need to refresh.');
             }
           } else {
             throw new Error('QuestCoin minting failed');
@@ -180,7 +231,7 @@ export function GameUI() {
               }
             } catch (claimError) {
               console.error('⚠️ Failed to mark NFT as claimed:', claimError);
-              alert(`⚠️ Warning: NFT minted but failed to mark as claimed in contract. You may need to refresh.`);
+              showNotification('warning', 'Warning', 'NFT minted but failed to mark as claimed in contract. You may need to refresh.');
             }
           }
         } else {
@@ -190,19 +241,19 @@ export function GameUI() {
         // Show appropriate success message based on what was minted
         if (questCoinSuccess && nftSuccess) {
           if (tokensAlreadyClaimed && nftAlreadyClaimed) {
-            alert(`✅ Already Claimed!\n\nYou have already claimed all Stage ${stage} rewards:\n• ${tokenAmount} QuestCoin tokens\n• ${badgeName} NFT badge`);
+            showNotification('info', 'Already Claimed', `You have already claimed all Stage ${stage} rewards:\n• ${tokenAmount} QuestCoin tokens\n• ${badgeName} NFT badge`, 6000);
           } else if (tokensAlreadyClaimed && !nftAlreadyClaimed) {
-            alert(`🎖️ NFT Badge Minted!\n\n• ${badgeName} NFT badge minted ✅\n• Tokens were already claimed previously\n\nCheck https://hashscan.io/testnet for transaction details.`);
+            showNotification('success', 'NFT Badge Minted!', `${badgeName} NFT badge minted ✅\nTokens were already claimed previously\n\nCheck https://hashscan.io/testnet for transaction details.`, 7000);
           } else if (!tokensAlreadyClaimed && nftAlreadyClaimed) {
-            alert(`💰 Tokens Minted!\n\n• ${tokenAmount} QuestCoin tokens minted ✅\n• NFT was already claimed previously\n\nCheck https://hashscan.io/testnet for transaction details.`);
+            showNotification('success', 'Tokens Minted!', `${tokenAmount} QuestCoin tokens minted ✅\nNFT was already claimed previously\n\nCheck https://hashscan.io/testnet for transaction details.`, 7000);
           } else {
-            alert(`🎖️ HTS Tokens Minted Successfully!\n\n• ${tokenAmount} QuestCoin tokens minted\n• ${badgeName} NFT badge minted\n\n✅ Check https://hashscan.io/testnet for transaction details.`);
+            showNotification('success', 'HTS Tokens Minted Successfully!', `${tokenAmount} QuestCoin tokens minted\n${badgeName} NFT badge minted\n\nCheck https://hashscan.io/testnet for transaction details.`, 7000);
           }
-          window.location.reload();
+          setTimeout(() => window.location.reload(), 2000);
         } else if (questCoinSuccess && !nftSuccess) {
           console.warn('⚠️ NFT minting failed, but QuestCoins were minted');
-          alert(`⚠️ Partial Success\n\n• ${tokenAmount} QuestCoin tokens minted ✅\n• ${badgeName} NFT minting failed ❌\n\nYou can try again to mint just the NFT - tokens are already claimed.`);
-          setTimeout(() => window.location.reload(), 2000);
+          showNotification('warning', 'Partial Success', `${tokenAmount} QuestCoin tokens minted ✅\n${badgeName} NFT minting failed ❌\n\nYou can try again to mint just the NFT - tokens are already claimed.`, 8000);
+          setTimeout(() => window.location.reload(), 3000);
         } else {
           throw new Error('Minting failed');
         }
@@ -213,20 +264,20 @@ export function GameUI() {
         // Provide detailed error feedback based on the error type
         if (mintError instanceof Error) {
           if (mintError.message.includes('Mirror Node API error')) {
-            alert(`⚠️ Address Lookup Issue\n\nCouldn't connect to Hedera Mirror Node to look up your account.\n\nFor demo purposes, tokens will be minted to the treasury account.\n\nError: ${mintError.message}`);
+            showNotification('warning', 'Address Lookup Issue', `Couldn't connect to Hedera Mirror Node to look up your account.\n\nFor demo purposes, tokens will be minted to the treasury account.\n\nError: ${mintError.message}`, 8000);
           } else if (mintError.message.includes('Cannot create account mapping')) {
-            alert(`❌ Account Mapping Error\n\nCouldn't map your EVM address to a Hedera Account ID.\n\nPlease ensure:\n1. You have a Hedera account associated with your wallet\n2. The Hedera services are accessible\n3. Try again in a moment\n\nError: ${mintError.message}`);
+            showNotification('error', 'Account Mapping Error', `Couldn't map your EVM address to a Hedera Account ID.\n\nPlease ensure:\n1. You have a Hedera account associated with your wallet\n2. The Hedera services are accessible\n3. Try again in a moment\n\nError: ${mintError.message}`, 10000);
           } else {
-            alert(`❌ Minting Error: ${mintError.message}\n\nPlease try again or check your Hedera account setup.`);
+            showNotification('error', 'Minting Error', `${mintError.message}\n\nPlease try again or check your Hedera account setup.`, 8000);
           }
         } else {
-          alert(`❌ Unknown Error: Please try again or check your Hedera account setup.`);
+          showNotification('error', 'Unknown Error', 'Please try again or check your Hedera account setup.', 6000);
         }
       }
 
     } catch (error) {
       console.error('❌ Minting process failed:', error);
-      alert(`❌ Process Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      showNotification('error', 'Process Error', error instanceof Error ? error.message : 'Unknown error');
     } finally {
       setIsMinting(false);
     }
@@ -234,12 +285,12 @@ export function GameUI() {
 
   const handlePurchaseItem = async (itemName: string, itemCost: number) => {
     if (!address || !player) {
-      alert('Please connect your wallet first');
+      showNotification('warning', 'Wallet Not Connected', 'Please connect your wallet first.');
       return;
     }
 
     if (player.inGameCoins < itemCost) {
-      alert(`Insufficient coins! You have ${player.inGameCoins} coins but need ${itemCost}.`);
+      showNotification('warning', 'Insufficient Coins', `You have ${player.inGameCoins} coins but need ${itemCost}.`);
       return;
     }
 
@@ -251,18 +302,18 @@ export function GameUI() {
         const success = await contractCallbacks.purchaseItem(itemName, itemCost);
 
         if (success) {
-          alert(`✅ Successfully purchased ${itemName}!`);
+          showNotification('success', 'Purchase Successful', `Successfully purchased ${itemName}!`);
           // Refresh player data to update coin balance
           if (contractCallbacks.loadPlayerData) {
             await contractCallbacks.loadPlayerData(address);
           }
         } else {
-          alert('❌ Purchase failed. Please try again.');
+          showNotification('error', 'Purchase Failed', 'Please try again.');
         }
       }
     } catch (error) {
       console.error('❌ Purchase error:', error);
-      alert(`❌ Purchase failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      showNotification('error', 'Purchase Failed', error instanceof Error ? error.message : 'Unknown error');
     } finally {
       setIsPurchasing(false);
     }
@@ -655,6 +706,15 @@ export function GameUI() {
           </div>
         </div>
       )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={confirmDialog.onCancel}
+      />
     </>
   );
 }

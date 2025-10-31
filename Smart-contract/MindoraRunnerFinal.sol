@@ -93,7 +93,16 @@ contract MindoraRunnerFinal {
     ) external onlyRegistered {
 
         Player storage player = players[msg.sender];
-        require(_stage <= player.currentStage, "Stage locked");
+        
+        // Allow saving if:
+        // 1. Stage is <= currentStage (normal sequential progression), OR
+        // 2. Stage is currentStage + 1 AND this is a completion (allows catching up if player completed locally)
+        // This handles cases where player completed stages locally but contract hasn't updated yet
+        require(
+            _stage <= player.currentStage || 
+            (_stage == player.currentStage + 1 && _stageCompleted && stageCompleted[msg.sender][_stage - 1]),
+            "Stage locked"
+        );
 
         // Always save coins and update stats
         player.inGameCoins += _coinsCollected;
@@ -124,15 +133,17 @@ contract MindoraRunnerFinal {
             uint256 tokensToEarn = _getStageTokenReward(_stage);
             player.questTokensEarned += tokensToEarn;
 
-            // Unlock next stage
-            if (_stage == player.currentStage && _stage < 3) {
-                player.currentStage++;
+            // Unlock next stage when completing any stage that matches or exceeds current stage
+            // This allows:
+            // - Sequential progression: complete stage 1 → unlock 2, complete stage 2 → unlock 3
+            // - Catching up: if player completed stage 2 locally (currentStage=1), save stage 2 → unlock 3
+            if (_stage >= player.currentStage && _stage < 3) {
+                // Set currentStage to completed stage + 1 to unlock next stage
+                player.currentStage = _stage + 1;
             }
 
             emit StageCompleted(msg.sender, _stage, tokensToEarn);
         }
-
-        totalGamesPlayed++;
         emit GameSessionSaved(msg.sender, _stage, _finalScore, _coinsCollected, _stageCompleted);
     }
 

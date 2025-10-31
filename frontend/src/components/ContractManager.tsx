@@ -5,12 +5,17 @@ import { useAccount, useWaitForTransactionReceipt, usePublicClient } from 'wagmi
 import { useGameStore, Player, LeaderboardEntry } from '@/store/gameStore';
 import { useMindoraRunner, usePlayerData, useGeneralLeaderboard, useStageCompletion, useTokensClaimed, useNFTClaimed } from '@/hooks/useMindoraRunner';
 import { hederaService } from '@/services/hederaService';
-import { getContractAddresses } from '@/config/contracts';
+import { getContractAddresses, getEvmContractAddresses } from '@/config/contracts';
 
 export function ContractManager() {
   const { address, isConnected } = useAccount();
   const { setContractCallbacks, setConnected, setWalletAddress, setPlayer } = useGameStore();
   const publicClient = usePublicClient();
+
+  // Get current contract address and log it
+  const contracts = getEvmContractAddresses();
+  console.log('🏗️ ContractManager - Using contract address:', contracts.MINDORA_RUNNER);
+  console.log('🏗️ ContractManager - Environment variable:', process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || 'NOT SET');
 
   const mindoraHook = useMindoraRunner();
   const { registerPlayer, saveGameSession, claimTokens, claimNFT, isPending, isConfirming, isSuccess, hash } = mindoraHook;
@@ -115,7 +120,15 @@ export function ContractManager() {
         totalScore: contractPlayer.totalScore,
         questTokensEarned: contractPlayer.questTokensEarned,
         inGameCoins: contractPlayer.inGameCoins,
+        isRegistered: contractPlayer.isRegistered,
+        contractAddress: contracts.MINDORA_RUNNER
       });
+      
+      // IMPORTANT: New contract deployment means all players start fresh
+      // If player shows stage 3 but contract currentStage is 1, they need to re-register or this is old data
+      if (Number(contractPlayer.currentStage) > 1 && !contractPlayer.isRegistered) {
+        console.warn('⚠️ WARNING: Player shows stage', contractPlayer.currentStage, 'but is not registered. This might be old cached data.');
+      }
 
       if (contractPlayer.isRegistered) {
         const playerData: Player = {
@@ -447,10 +460,23 @@ export function ContractManager() {
         stageCompleted: boolean
       ): Promise<{ success: boolean; transactionId?: string }> => {
         try {
-          console.log('💾 ContractManager - Starting save game session:', {stage, finalScore, coinsCollected, stageCompleted});
+          console.log('💾 ContractManager - Starting save game session:', {stage, finalScore, coinsCollected, questionsCorrect, stageCompleted});
+
+          // Validate inputs
+          if (finalScore < 0 || coinsCollected < 0) {
+            console.error('❌ Invalid save parameters:', { finalScore, coinsCollected });
+            return { success: false };
+          }
+
+          // Contract now handles validation - it allows saving currentStage + 1 if previous stage is completed
+          // So we just log and let the contract validate
+          const currentPlayerFromRef = hooksRef.current.contractPlayer;
+          const contractCurrentStage = currentPlayerFromRef ? Number(currentPlayerFromRef.currentStage || 1) : stage;
+          console.log('🔍 ContractManager - Contract currentStage:', contractCurrentStage, 'Trying to save stage:', stage);
 
           // Call the wagmi hook - this will trigger the transaction
-          await hooksRef.current.saveGameSession(stage, finalScore, coinsCollected, questionsCorrect, stageCompleted);
+          const result = await hooksRef.current.saveGameSession(stage, finalScore, coinsCollected, questionsCorrect, stageCompleted);
+          console.log('💾 ContractManager - saveGameSession hook result:', result);
 
           // Stage completion is now saved to contract - minting handled separately via Collection UI
           if (stageCompleted) {
@@ -458,9 +484,24 @@ export function ContractManager() {
           }
 
           // The transaction states will be handled by the useEffect above
+          // Return success based on whether the hook executed without error
           return { success: true };
-        } catch (error) {
-          console.error('Save game session failed:', error);
+        } catch (error: any) {
+          console.error('❌ Save game session failed:', error);
+          console.error('❌ Error details:', {
+            message: error?.message,
+            cause: error?.cause,
+            stack: error?.stack,
+            code: error?.code,
+            reason: error?.reason
+          });
+          
+          // Check if error is about stage being locked
+          const errorMessage = error?.message || error?.reason || '';
+          if (errorMessage.includes('Stage locked') || errorMessage.includes('stage locked')) {
+            console.error('❌ Contract rejected: Stage is locked. Player needs to complete previous stages first.');
+          }
+          
           return { success: false };
         }
       },

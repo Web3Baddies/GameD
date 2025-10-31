@@ -5,6 +5,7 @@ import { useAccount, useReadContract, useWriteContract, useWaitForTransactionRec
 import { formatEther, parseEther } from 'viem';
 import { getEvmContractAddresses } from '@/config/contracts';
 import { NFTMarketplaceABI } from '@/config/abis/NFTMarketplaceABI';
+import { useGameStore } from '@/store/gameStore';
 
 const contracts = getEvmContractAddresses();
 
@@ -43,6 +44,7 @@ const HEDERA_NFT_ABI = [
 
 export function NFTCard({ tokenId, badgeName, badgeImage, ownerAddress, isOwnedByUser, onListingChange }: NFTCardProps) {
   const { address: connectedAddress } = useAccount();
+  const showNotification = useGameStore(state => state.showNotification);
   const [showListModal, setShowListModal] = useState(false);
   const [listPrice, setListPrice] = useState('');
   const [isApproving, setIsApproving] = useState(false);
@@ -114,7 +116,7 @@ export function NFTCard({ tokenId, badgeName, badgeImage, ownerAddress, isOwnedB
   // Handle list
   const handleList = async () => {
     if (!listPrice || parseFloat(listPrice) <= 0) {
-      alert('Please enter a valid price in HBAR');
+      showNotification('warning', 'Invalid Price', 'Please enter a valid price in HBAR');
       return;
     }
 
