@@ -636,6 +636,8 @@ Our team consists of Hedera-certified blockchain developers passionate about emp
 | **Ebele Lynda Okolo** | Lead Developer & Blockchain Architect | [View Certificate](https://drive.google.com/file/d/11IjnfTMXMplSn0OzNSyw_x2hJsgy1oKk/view?usp=sharing) |
 | **Nnenna Okoye** | Smart Contract Developer & Game Designer | [View Certificate](https://drive.google.com/file/d/1s6nWxzZibfTQ9OxJv6PGp0SmbULynEaO/view?usp=sharing) |
 | **Popoola Ramat** | Frontend Developer & UI/UX Designer | [View Certificate](https://drive.google.com/drive/folders/1epy5tV8vF1rmPhkg1jyUxo_hX8JcxY37) |
+| **Akpolo Ogagaoghene** | Frontend Developer & Smart Contract Engineer | [View Certificate](https://drive.google.com/file/d/1Rk2UilGbYtENd_uwOGplcCCEn1Gx4bcL/view?usp=sharing) |
+
 
 ### **Our Expertise**
 - ✅ Hedera SDK integration (HTS, HSCS, HCS)
